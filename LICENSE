@@ -1,0 +1,51 @@
+VDSX RESTRICTED LICENSE (Company-Only)
+Version 1.0 — 2025-01-01
+
+Designated Entity: NIMBUS LLC, LANDON CRUTCHFIELD & MCCOY HOLDINGS
+
+1. GRANT OF RIGHTS
+Subject to continued compliance with this License, the Licensor grants the Designated Entity (“LANDON CRUTCHFIELD & MCCOY HOLDINGS, NIMBUS LLC”) a limited, non-exclusive, non-transferable, non-sublicensable license to:
+  (a) use, reproduce, and modify the Licensed Materials;
+  (b) create derivative works of the Licensed Materials; and
+  (c) deploy and operate the Licensed Materials and derivative works internally and in products or services offered by or for the Designated Entity.
+
+All rights not expressly granted are reserved by the Licensor.
+
+2. SCOPE & RESTRICTIONS
+2.1 This License applies to the source code, binaries, documentation, specifications, and assets included in this repository (“Licensed Materials”).
+2.2 The rights granted hereunder are limited to the Designated Entity and its employees or contractors acting on its behalf under written confidentiality obligations.
+2.3 You MAY NOT:
+   (i) redistribute, publish, or make the Licensed Materials (or substantial portions) available to any third party, whether in source or binary form, except as integrated into a product or service provided by the Designated Entity;
+   (ii) sublicense, assign, or otherwise transfer the Licensed Materials or this License to any third party;
+   (iii) remove or alter any notices of ownership, attribution, or this License;
+   (iv) use any Licensor names, marks, or logos except as necessary to exercise rights granted herein.
+
+3. DATA & MODELS
+3.1 You may use the Licensed Materials to process and generate data (including VDSX files and point clouds) and to train, fine-tune, and evaluate machine-learning models, provided such use is by or for the Designated Entity.
+3.2 You are solely responsible for all input/output data and third-party rights. No rights to third-party content are granted by this License.
+
+4. NO PATENT LICENSE
+No patent rights are granted under this License, whether by implication, estoppel, or otherwise.
+
+5. OWNERSHIP
+The Licensor retains all right, title, and interest in and to the Licensed Materials. This License does not transfer ownership.
+
+6. TERMINATION
+This License automatically terminates upon:
+  (a) any material breach by You that remains uncured for 15 days after written notice; or
+  (b) Your attempt to transfer or sublicense rights in violation of Section 2.3.
+Upon termination, You must immediately cease use and destroy or securely delete all copies of the Licensed Materials in Your possession or control. Sections 3–10 survive termination.
+
+7. WARRANTY DISCLAIMER
+THE LICENSED MATERIALS ARE PROVIDED “AS IS” AND “AS AVAILABLE” WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED. WITHOUT LIMITATION, LICENSOR DISCLAIMS ANY WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, AND NON-INTERFERENCE.
+
+8. LIMITATION OF LIABILITY
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, LICENSOR SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF PROFITS, REVENUE, DATA, OR GOODWILL, ARISING FROM OR RELATING TO THE LICENSED MATERIALS OR THIS LICENSE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. LICENSOR’S AGGREGATE LIABILITY SHALL NOT EXCEED ONE HUNDRED U.S. DOLLARS (US$100).
+
+9. GOVERNING LAW & VENUE
+This License is governed by the laws of the State of California, USA, without regard to conflicts of law principles. Exclusive jurisdiction and venue shall lie in the courts located in San Francisco County, California, USA.
+
+10. MISCELLANEOUS
+If any provision of this License is held unenforceable, the remaining provisions will remain in full force. This License constitutes the entire agreement regarding the Licensed Materials and supersedes any prior or contemporaneous understandings.
+
+© 2025 American Robotics IO. All rights reserved.
