@@ -1,4 +1,3 @@
- codex/refactor-main-html-structure-for-readability-lzqh1j
 # 🌍 VDSX Family
 
 Visual Data Scene eXchange — Building the World in 3D, for Humans and AI
