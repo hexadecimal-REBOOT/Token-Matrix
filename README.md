@@ -111,4 +111,3 @@ Token Matrix: A context-aware language model system using vector databases for e
 ## License
 
 This repository is governed by the VDSX Restricted License (Company-Only). All rights are reserved exclusively for NIMBUS LLC and Landon Crutchfield & McCoy Holdings, including their authorized personnel and contractors under NDA. Any other use, redistribution, or disclosure is strictly prohibited. See [LICENSE](LICENSE) for the full terms.
- main
