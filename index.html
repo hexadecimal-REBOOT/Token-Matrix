@@ -1,0 +1,2181 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+        <title>
+            Image/Video → Intrinsics, Depth, Point Cloud → VDSX (Multi-Frame)
+        </title>
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+        <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+        <style>
+            :root {
+                --bg: #0a0e1a;
+                --panel: #0d1321;
+                --ink: #e8f4f8;
+                --mut: #94a9c9;
+                --line: #1e2a44;
+                --accent: #00d4ff;
+                --ok: #1dd1a1;
+                --bad: #ff7675;
+            }
+            * {
+                box-sizing: border-box;
+                -webkit-tap-highlight-color: transparent;
+            }
+            body {
+                margin: 0;
+                font-family: system-ui, -apple-system, Segoe UI, Roboto,
+                    sans-serif;
+                background: var(--bg);
+                color: var(--ink);
+                touch-action: manipulation;
+            }
+            .wrap {
+                max-width: 1180px;
+                margin: 0 auto;
+                padding: 14px;
+            }
+            .app-shell {
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+            }
+            .app-header {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
+            h1 {
+                font-size: 20px;
+                margin: 6px 0 2px;
+                background: linear-gradient(135deg, var(--accent), #74b9ff);
+                -webkit-background-clip: text;
+                background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            h2 {
+                font-size: 16px;
+                margin: 10px 0 8px;
+            }
+            .card {
+                background: var(--panel);
+                border: 1px solid var(--line);
+                border-radius: 12px;
+                padding: 12px;
+                margin: 12px 0;
+            }
+            .row {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+            .badge {
+                display: inline-block;
+                border: 1px solid var(--line);
+                padding: 4px 8px;
+                border-radius: 999px;
+                font-size: 11px;
+                color: var(--mut);
+            }
+            .badge.ok {
+                border-color: var(--ok);
+                color: var(--ok);
+            }
+            .badge.bad {
+                border-color: var(--bad);
+                color: var(--bad);
+            }
+            button,
+            select,
+            input[type='file'],
+            input[type='number'],
+            input[type='text'],
+            input[type='checkbox'] {
+                background: #0b1324;
+                border: 1px solid var(--line);
+                color: #fff;
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 12px;
+                cursor: pointer;
+            }
+            button.primary {
+                background: linear-gradient(135deg, #0a84ff, #007acc);
+                border-color: #0a84ff;
+            }
+            button:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+            .workspace-grid {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 14px;
+            }
+            @media (min-width: 960px) {
+                .workspace-grid {
+                    grid-template-columns: 1.1fr 0.9fr;
+                }
+            }
+            canvas,
+            video,
+            img {
+                max-width: 100%;
+                border-radius: 10px;
+                display: block;
+                box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+                background: #000;
+            }
+            .kv {
+                display: grid;
+                grid-template-columns: 160px 1fr;
+                gap: 6px;
+            }
+            pre {
+                font: 12px/1.5 ui-monospace, Consolas, monospace;
+                background: #06101e;
+                border: 1px solid var(--line);
+                border-radius: 10px;
+                padding: 10px;
+                white-space: pre-wrap;
+                max-height: 260px;
+                overflow: auto;
+            }
+            .drop {
+                display: grid;
+                place-items: center;
+                border: 1px dashed var(--line);
+                border-radius: 12px;
+                padding: 18px;
+                color: var(--mut);
+                cursor: pointer;
+            }
+            small {
+                color: var(--mut);
+            }
+            .loading {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(10, 14, 26, 0.8);
+                z-index: 1000;
+                justify-content: center;
+                align-items: center;
+                flex-direction: column;
+                color: var(--ink);
+            }
+            .loading-spinner {
+                width: 40px;
+                height: 40px;
+                border: 4px solid var(--line);
+                border-top: 4px solid var(--accent);
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin-bottom: 10px;
+            }
+            @keyframes spin {
+                0% {
+                    transform: rotate(0);
+                }
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+            .badgeRow {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin: 8px 0;
+            }
+            fieldset {
+                border: 1px solid var(--line);
+                border-radius: 10px;
+            }
+            legend {
+                color: var(--mut);
+                padding: 0 6px;
+            }
+            hr {
+                border: none;
+                border-top: 1px solid var(--line);
+                margin: 8px 0;
+            }
+            .workspace-preview,
+            .workspace-inspector {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+            .workspace-inspector pre {
+                flex: 1;
+            }
+            .sr-only {
+                position: absolute;
+                width: 1px;
+                height: 1px;
+                padding: 0;
+                margin: -1px;
+                overflow: hidden;
+                clip: rect(0, 0, 0, 0);
+                white-space: nowrap;
+                border: 0;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="loading" id="loading">
+            <div class="loading-spinner"></div>
+            <div>Processing…</div>
+        </div>
+        <main class="wrap app-shell">
+            <header class="app-header">
+                <h1>
+                    Image/Video → Intrinsics, Depth, Point Cloud → VDSX
+                    (Multi-Frame)
+                </h1>
+                <div class="badgeRow" role="status">
+                    <span id="s_depth" class="badge">DEPTH: —</span>
+                    <span id="s_yolo" class="badge">YOLO: —</span>
+                    <span id="s_fov" class="badge">FOV-NN: —</span>
+                    <span id="s_intr" class="badge">INTR: —</span>
+                    <span id="s_extr" class="badge">EXTR: —</span>
+                    <span id="s_ep" class="badge">EP: —</span>
+                    <span id="s_fps" class="badge">FPS: —</span>
+                    <span id="s_rec" class="badge">REC: idle</span>
+                </div>
+            </header>
+
+            <section class="card model-controls" aria-labelledby="modelControlsHeading">
+                <h2 id="modelControlsHeading" class="sr-only">Model loading</h2>
+                <div class="row">
+                    <button id="loadDepth" class="primary">
+                        🧠 Load Depth ONNX
+                    </button>
+                    <input
+                        id="depthFile"
+                        type="file"
+                        accept=".onnx"
+                        style="display: none" />
+                    <button id="loadYolo" class="primary">
+                        🎯 Load YOLO ONNX (optional)
+                    </button>
+                    <input
+                        id="yoloFile"
+                        type="file"
+                        accept=".onnx"
+                        style="display: none" />
+                    <button id="loadFov" class="primary">
+                        📐 Load FOV ONNX (optional)
+                    </button>
+                    <input
+                        id="fovFile"
+                        type="file"
+                        accept=".onnx"
+                        style="display: none" />
+                    <select id="epSel" aria-label="Execution provider">
+                        <option value="auto" selected>Auto EP</option>
+                        <option value="webgpu">WebGPU</option>
+                        <option value="wasm">WASM</option>
+                    </select>
+                    <button id="bench">⚙️ Benchmark</button>
+                </div>
+            </section>
+
+            <section class="card source-card" aria-labelledby="sourceHeading">
+                <fieldset>
+                    <legend id="sourceHeading">Source</legend>
+                    <div class="row">
+                        <label
+                            ><input
+                                type="radio"
+                                name="src"
+                                value="image"
+                                checked />
+                            Image</label
+                        >
+                        <label
+                            ><input type="radio" name="src" value="video" />
+                            Camera (real-time)</label
+                        >
+                    </div>
+
+                    <div id="imageControls" class="row">
+                        <input
+                            id="imgFiles"
+                            type="file"
+                            accept="image/*"
+                            multiple />
+                        <div id="drop" class="drop">
+                            Drop images here or click to select
+                        </div>
+                    </div>
+
+                    <div id="videoControls" class="row" style="display: none">
+                        <button id="startCam" class="primary">
+                            🎥 Start Camera
+                        </button>
+                        <button id="stopCam">⏹️ Stop Camera</button>
+                        <label
+                            >Target FPS
+                            <input
+                                id="tgtFps"
+                                type="number"
+                                value="60"
+                                min="1"
+                                max="240"
+                                style="width: 72px"
+                        /></label>
+                        <label
+                            ><input id="perFrameIntr" type="checkbox" />
+                            Estimate intrinsics per frame</label
+                        >
+                        <label
+                            ><input id="drawYOLOChk" type="checkbox" checked />
+                            Draw YOLO</label
+                        >
+                        <label
+                            ><input id="drawDepthChk" type="checkbox" checked />
+                            Draw depth overlay</label
+                        >
+                        <label
+                            >Frame stride
+                            <input
+                                id="frameStride"
+                                type="number"
+                                value="1"
+                                min="1"
+                                max="16"
+                                style="width: 72px"
+                                title="Record 1 of every N processed frames"
+                        /></label>
+                    </div>
+                </fieldset>
+            </section>
+
+            <section class="card workspace-card" aria-label="Workspace">
+                <div class="workspace-grid">
+                    <article class="workspace-preview" aria-labelledby="previewHeading">
+                        <h2 id="previewHeading">Preview</h2>
+                        <video
+                            id="video"
+                            width="2"
+                            height="2"
+                            autoplay
+                            playsinline
+                            muted
+                            style="display: none"></video>
+                        <canvas id="view" width="2" height="2"></canvas>
+                        <div class="row">
+                            <label
+                                >Depth size
+                                <select id="depthSize">
+                                    <option>256</option>
+                                    <option selected>320</option>
+                                    <option>384</option>
+                                </select>
+                            </label>
+                            <label
+                                >Scale (meters per unit)
+                                <input
+                                    id="scaleMeters"
+                                    type="number"
+                                    step="0.01"
+                                    value="1.00"
+                                    style="width: 110px" />
+                            </label>
+                            <label
+                                >Up vector
+                                <select id="upSel">
+                                    <option value="y" selected>+Y up</option>
+                                    <option value="z">+Z up</option>
+                                </select>
+                            </label>
+                            <label
+                                >Retention Mode
+                                <select id="retentionMode">
+                                    <option value="FULL" selected>
+                                        FULL (RGB + pointcloud)
+                                    </option>
+                                    <option value="REFERENTIAL">
+                                        REFERENTIAL (minimal)
+                                    </option>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="row">
+                            <button id="processOne" class="primary">
+                                ▶️ Process Selected (Image)
+                            </button>
+                            <button id="saveVDSX" disabled>
+                                💾 Save .vdsx (current frame)
+                            </button>
+                            <button id="startRec" disabled>
+                                ⏺️ Start Recording (VDSX)
+                            </button>
+                            <button id="stopRec" disabled>
+                                💾 Stop & Save Recording
+                            </button>
+                        </div>
+                    </article>
+                    <aside class="workspace-inspector" aria-labelledby="resultsHeading">
+                        <h2 id="resultsHeading">Results</h2>
+                        <div class="kv" id="kv"></div>
+                        <h2 id="logsHeading">Logs</h2>
+                        <pre id="log" aria-labelledby="logsHeading">
+Load a depth model, then drop an image or start the camera.</pre
+                        >
+                    </aside>
+                </div>
+            </section>
+        </main>
+
+        <script>
+            /* ===== Utils & UI ===== */
+            const $ = (id) => document.getElementById(id)
+            const log = (m, t = 'info') => {
+                const p =
+                    t === 'error'
+                        ? '❌'
+                        : t === 'ok'
+                        ? '✅'
+                        : t === 'warn'
+                        ? '⚠️'
+                        : 'ℹ️'
+                $('log').textContent += `\n${p} ${m}`
+                $('log').scrollTop = $('log').scrollHeight
+            }
+            const chip = (el, txt, ok = null) => {
+                el.textContent = txt
+                el.classList.remove('ok', 'bad')
+                if (ok === true) el.classList.add('ok')
+                if (ok === false) el.classList.add('bad')
+            }
+            function showLoading() {
+                $('loading').style.display = 'flex'
+            }
+            function hideLoading() {
+                $('loading').style.display = 'none'
+            }
+            /* Reusable canvas + buffer pools to avoid per-frame allocations */
+            const canvasPool = new Map()
+            function acquireCanvas(key, w, h) {
+                const maxSize = 4096
+                const width = Math.min(w, maxSize)
+                const height = Math.min(h, maxSize)
+                let entry = canvasPool.get(key)
+                if (!entry) {
+                    const canvas = document.createElement('canvas')
+                    const ctx = canvas.getContext('2d')
+                    entry = { canvas, ctx, width: 0, height: 0 }
+                    canvasPool.set(key, entry)
+                }
+                if (entry.width !== width || entry.height !== height) {
+                    entry.canvas.width = width
+                    entry.canvas.height = height
+                    entry.width = width
+                    entry.height = height
+                } else {
+                    entry.ctx.clearRect(0, 0, width, height)
+                }
+                return entry
+            }
+
+            const float32Pool = new Map()
+            function acquireFloat32(key, length) {
+                let arr = float32Pool.get(key)
+                if (!arr || arr.length !== length) {
+                    arr = new Float32Array(length)
+                    float32Pool.set(key, arr)
+                }
+                return arr
+            }
+
+            const uint32Pool = new Map()
+            function acquireUint32(key, length) {
+                let arr = uint32Pool.get(key)
+                if (!arr || arr.length !== length) {
+                    arr = new Uint32Array(length)
+                    uint32Pool.set(key, arr)
+                } else {
+                    arr.fill(0)
+                }
+                return arr
+            }
+            window.addEventListener('error', (e) => {
+                console.error(e)
+                log(
+                    'App error: ' +
+                        (e.error?.message || e.message || 'Unknown'),
+                    'error'
+                )
+                hideLoading()
+            })
+            window.addEventListener('unhandledrejection', (e) => {
+                console.error(e.reason)
+                log('Async error: ' + (e.reason?.message || 'Unknown'), 'error')
+                hideLoading()
+                e.preventDefault()
+            })
+        </script>
+
+        <!-- Intrinsics ladder + FOV predictor -->
+        <script type="module">
+            export function createIntrinsicsLadder({
+                fovOnnxSession = null
+            } = {}) {
+                const deg2rad = (d) => (d * Math.PI) / 180,
+                    clamp = (x, a, b) => Math.max(a, Math.min(b, x))
+                const makeK = ({ fx, fy, cx, cy, skew = 0 }) => ({
+                    fx,
+                    fy,
+                    cx,
+                    cy,
+                    skew
+                })
+                const fuse1D = (arr) => {
+                    const w = arr.reduce(
+                        (s, c) => s + 1 / (c.sigma || 1e-6) ** 2,
+                        0
+                    )
+                    const mu =
+                        arr.reduce(
+                            (s, c) => s + c.mu / (c.sigma || 1e-6) ** 2,
+                            0
+                        ) / (w || 1)
+                    return { mu, sigma: Math.sqrt(1 / (w || 1)) }
+                }
+                const score = (sigRel, ref = 0.07) =>
+                    clamp(1 / (1 + sigRel / ref), 0, 1)
+
+                function tierDefault({ W, H }) {
+                    const fovx = 63
+                    const fx = (0.5 * W) / Math.tan(0.5 * deg2rad(fovx)),
+                        fy = fx,
+                        cx = W / 2,
+                        cy = H / 2,
+                        sRel = 0.2
+                    return {
+                        rung: 'default',
+                        K: makeK({ fx, fy, cx, cy, skew: 0 }),
+                        sigma: {
+                            fx: sRel * fx,
+                            fy: sRel * fy,
+                            cx: 8,
+                            cy: 8,
+                            skew: 2
+                        },
+                        confidence: score(sRel),
+                        details: { fovx }
+                    }
+                }
+                async function tierFOV({ imageBitmap, W, H }) {
+                    if (!fovOnnxSession) return null
+                    try {
+                        const fovx = await (window.predictFovDeg
+                            ? window.predictFovDeg(
+                                  fovOnnxSession,
+                                  imageBitmap,
+                                  W,
+                                  H
+                              )
+                            : Promise.reject('no predictor'))
+                        const fx = (0.5 * W) / Math.tan(0.5 * deg2rad(fovx)),
+                            fy = fx,
+                            cx = W / 2,
+                            cy = H / 2,
+                            sRel = 0.1
+                        return {
+                            rung: 'fov_nn',
+                            K: makeK({ fx, fy, cx, cy, skew: 0 }),
+                            sigma: {
+                                fx: sRel * fx,
+                                fy: sRel * fy,
+                                cx: 6,
+                                cy: 6,
+                                skew: 1.5
+                            },
+                            confidence: score(sRel),
+                            details: { fovxDeg: fovx }
+                        }
+                    } catch {
+                        return null
+                    }
+                }
+                async function estimate({ imageBitmap, width, height }) {
+                    const W = width,
+                        H = height
+                    const tried = []
+                    const nn = await tierFOV({ imageBitmap, W, H })
+                    if (nn) tried.push(nn)
+                    if (!tried.length) tried.push(tierDefault({ W, H }))
+                    tried.sort((a, b) => b.confidence - a.confidence)
+                    const best = tried[0],
+                        fxF = fuse1D(
+                            tried.map((t) => ({
+                                mu: t.K.fx,
+                                sigma: t.sigma.fx
+                            }))
+                        ),
+                        fyF = fuse1D(
+                            tried.map((t) => ({
+                                mu: t.K.fy,
+                                sigma: t.sigma.fy
+                            }))
+                        )
+                    const fusedK = makeK({
+                        fx: fxF.mu,
+                        fy: fyF.mu,
+                        cx: best.K.cx,
+                        cy: best.K.cy,
+                        skew: best.K.skew
+                    })
+                    const rRel = Math.max(
+                        fxF.sigma / Math.max(1e-6, fxF.mu),
+                        fyF.sigma / Math.max(1e-6, fyF.mu)
+                    )
+                    return {
+                        K: fusedK,
+                        model: 'pinhole_browndecenter(0)',
+                        source: {
+                            rung: best.rung,
+                            confidence: best.confidence,
+                            tried: tried.map((t) => ({
+                                rung: t.rung,
+                                confidence: t.confidence,
+                                K: t.K,
+                                sigma: t.sigma,
+                                details: t.details
+                            }))
+                        },
+                        confidence: 1 / (1 + rRel / 0.07),
+                        qc: {
+                            method: 'precision-weighted fusion',
+                            fx_sigma: fxF.sigma,
+                            fy_sigma: fyF.sigma
+                        }
+                    }
+                }
+                return { estimate }
+            }
+            window.createIntrinsicsLadder = createIntrinsicsLadder
+        </script>
+
+        <script type="module">
+            async function predictFovDeg(sessionOrNull, imageBitmap, W, H) {
+                let canvas, ctx
+                try {
+                    if (sessionOrNull) {
+                        const size = 224
+                        canvas = document.createElement('canvas')
+                        canvas.width = size
+                        canvas.height = size
+                        ctx = canvas.getContext('2d')
+                        ctx.drawImage(imageBitmap, 0, 0, W, H, 0, 0, size, size)
+                        const rgba = ctx.getImageData(0, 0, size, size).data
+                        const area = size * size
+                        const chw = new Float32Array(3 * area)
+                        for (let i = 0, p = 0; i < rgba.length; i += 4, ++p) {
+                            chw[p] = rgba[i] / 255
+                            chw[p + area] = rgba[i + 1] / 255
+                            chw[p + 2 * area] = rgba[i + 2] / 255
+                        }
+                        const input = new ort.Tensor('float32', chw, [
+                            1,
+                            3,
+                            size,
+                            size
+                        ])
+                        const out = await sessionOrNull.run({
+                            [sessionOrNull.inputNames[0]]: input
+                        })
+                        const y =
+                            out[sessionOrNull.outputNames[0]] ||
+                            Object.values(out)[0]
+                        const fov = Array.isArray(y.data)
+                            ? y.data[0]
+                            : y.data[0]
+                        return Math.max(20, Math.min(120, fov))
+                    }
+                    canvas = document.createElement('canvas')
+                    canvas.width = 256
+                    canvas.height = 256
+                    ctx = canvas.getContext('2d')
+                    ctx.drawImage(imageBitmap, 0, 0, W, H, 0, 0, 256, 256)
+                    const id = ctx.getImageData(0, 0, 256, 256)
+                    let E = 0
+                    for (let y = 1; y < 255; y++) {
+                        for (let x = 1; x < 255; x++) {
+                            const i = (y * 256 + x) * 4
+                            const ix =
+                                id.data[i] -
+                                id.data[i - 4] +
+                                (id.data[i + 1] - id.data[i - 3]) +
+                                (id.data[i + 2] - id.data[i - 2])
+                            const iy =
+                                id.data[i] -
+                                id.data[i - 1024] +
+                                (id.data[i + 1] - id.data[i - 1023]) +
+                                (id.data[i + 2] - id.data[i - 1022])
+                            E += Math.hypot(ix, iy)
+                        }
+                    }
+                    E /= 255 * 256 * 256 * 3
+                    return Math.max(
+                        25,
+                        Math.min(110, 50 + 25 * Math.min(1, E) - 10)
+                    )
+                } finally {
+                    if (canvas) {
+                        canvas.width = 1
+                        canvas.height = 1
+                    }
+                }
+            }
+            window.predictFovDeg = predictFovDeg
+        </script>
+
+        <script>
+            /* ===== Global State ===== */
+            let depthSess = null,
+                yoloSess = null,
+                fovSess = null
+            let depthIn = 'pixel_values',
+                depthOut = 'predicted_depth'
+            let yoloIn = 'images',
+                yoloOut = 'output0'
+            let useEP = 'auto'
+            let currentImage = null,
+                curW = 0,
+                curH = 0
+            let lastResults = null
+
+            const video = $('video'),
+                view = $('view'),
+                vctx = view.getContext('2d', { willReadFrequently: true })
+            let stream = null,
+                running = false,
+                lastIntr = null,
+                frameTimer = 0,
+                fpsCounter = 0,
+                fpsLastTs = performance.now()
+            let inferBusy = false
+
+            /* Recording buffers (multi-frame VDSX) */
+            let recording = false,
+                recZip = null,
+                recFrames = 0,
+                recCfg = null
+            let recDepths = [],
+                recYOLO = [],
+                recRGBJpegs = [],
+                recIntrByFrame = []
+            let recPointXYZ = [],
+                recPointRGB = []
+
+            const __wmSeed = 'TokenMatrix::Confidential::2024'
+            const __wmTag = (() => {
+                let hex = ''
+                for (let i = 0; i < __wmSeed.length; i++) {
+                    hex += __wmSeed.charCodeAt(i).toString(16).padStart(2, '0')
+                }
+                return hex
+            })()
+            function __applyWatermark(target) {
+                if (!target.meta) target.meta = {}
+                if (!target.meta.__tmx) target.meta.__tmx = __wmTag
+                return target
+            }
+            function __watermarkProvenance(prov) {
+                return { ...prov, watermark: __wmTag }
+            }
+
+            /* ===== EP selection ===== */
+            $('epSel').onchange = () => (useEP = $('epSel').value)
+            async function pickEP() {
+                let want =
+                    useEP === 'auto'
+                        ? navigator.gpu
+                            ? 'webgpu'
+                            : 'wasm'
+                        : useEP
+                if (want === 'webgpu') {
+                    ort.env.webgpu.powerPreference = 'high-performance'
+                } else {
+                    ort.env.wasm.simd = true
+                    ort.env.wasm.numThreads = Math.min(
+                        4,
+                        navigator.hardwareConcurrency || 2
+                    )
+                }
+                chip($('s_ep'), `EP: ${want.toUpperCase()}`, true)
+                return want
+            }
+            $('bench').onclick = async (e) => {
+                e.preventDefault()
+                await pickEP()
+                log('Execution provider set.', 'ok')
+            }
+
+            /* ===== Model loading ===== */
+            $('loadDepth').onclick = () => $('depthFile').click()
+            $('depthFile').onchange = async (e) => {
+                const f = e.target.files?.[0]
+                if (!f) return
+                await pickEP()
+                try {
+                    depthSess = await ort.InferenceSession.create(
+                        await f.arrayBuffer(),
+                        {
+                            executionProviders: [
+                                $('s_ep').textContent.includes('WEBGPU')
+                                    ? 'webgpu'
+                                    : 'wasm'
+                            ]
+                        }
+                    )
+                    if (depthSess.inputNames?.length)
+                        depthIn = depthSess.inputNames[0]
+                    if (depthSess.outputNames?.length)
+                        depthOut = depthSess.outputNames.includes(
+                            'predicted_depth'
+                        )
+                            ? 'predicted_depth'
+                            : depthSess.outputNames[0]
+                    chip($('s_depth'), `DEPTH: ${f.name}`, true)
+                    log(`Depth model loaded: ${f.name}`, 'ok')
+                    // enable record buttons when depth is ready
+                    $('startRec').disabled = false
+                } catch (err) {
+                    chip($('s_depth'), 'DEPTH: load failed', false)
+                    log(err.message, 'error')
+                }
+            }
+            $('loadYolo').onclick = () => $('yoloFile').click()
+            $('yoloFile').onchange = async (e) => {
+                const f = e.target.files?.[0]
+                if (!f) return
+                await pickEP()
+                try {
+                    yoloSess = await ort.InferenceSession.create(
+                        await f.arrayBuffer(),
+                        {
+                            executionProviders: [
+                                $('s_ep').textContent.includes('WEBGPU')
+                                    ? 'webgpu'
+                                    : 'wasm'
+                            ]
+                        }
+                    )
+                    if (yoloSess.inputNames?.length)
+                        yoloIn = yoloSess.inputNames[0]
+                    if (yoloSess.outputNames?.length)
+                        yoloOut = yoloSess.outputNames[0]
+                    chip($('s_yolo'), `YOLO: ${f.name}`, true)
+                    log(`YOLO model loaded: ${f.name}`, 'ok')
+                } catch (err) {
+                    yoloSess = null
+                    chip($('s_yolo'), 'YOLO: load failed', false)
+                    log(err.message, 'error')
+                }
+            }
+            $('loadFov').onclick = () => $('fovFile').click()
+            $('fovFile').onchange = async (e) => {
+                const f = e.target.files?.[0]
+                if (!f) return
+                try {
+                    fovSess = await ort.InferenceSession.create(
+                        await f.arrayBuffer(),
+                        {
+                            executionProviders: [
+                                navigator.gpu ? 'webgpu' : 'wasm'
+                            ]
+                        }
+                    )
+                    chip($('s_fov'), `FOV-NN: ${f.name}`, true)
+                    log('FOV model loaded.', 'ok')
+                } catch (err) {
+                    chip($('s_fov'), 'FOV-NN: load failed', false)
+                    log(err.message, 'error')
+                }
+            }
+
+            /* ===== Image mode ===== */
+            function setCanvasFromImage(img) {
+                const maxL = 1280,
+                    s = Math.min(
+                        1,
+                        maxL / Math.max(img.naturalWidth, img.naturalHeight)
+                    )
+                curW = Math.round(img.naturalWidth * s)
+                curH = Math.round(img.naturalHeight * s)
+                view.width = curW
+                view.height = curH
+                vctx.drawImage(img, 0, 0, curW, curH)
+            }
+            $('imgFiles').onchange = (e) => {
+                const f = e.target.files?.[0]
+                if (!f) return
+                const img = new Image()
+                img.onload = () => {
+                    setCanvasFromImage(img)
+                    currentImage = img
+                    log(
+                        `Loaded ${f.name} (${img.naturalWidth}×${img.naturalHeight})`,
+                        'ok'
+                    )
+                }
+                img.onerror = () =>
+                    log(`Failed to load image: ${f.name}`, 'error')
+                img.src = URL.createObjectURL(f)
+            }
+            $('drop').ondragover = (e) => {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'copy'
+            }
+            $('drop').ondrop = (e) => {
+                e.preventDefault()
+                const f = e.dataTransfer.files?.[0]
+                if (!f || !f.type.startsWith('image')) return
+                const img = new Image()
+                img.onload = () => {
+                    setCanvasFromImage(img)
+                    currentImage = img
+                    log(
+                        `Dropped ${f.name} (${img.naturalWidth}×${img.naturalHeight})`,
+                        'ok'
+                    )
+                }
+                img.onerror = () =>
+                    log(`Failed to load dropped image: ${f.name}`, 'error')
+                img.src = URL.createObjectURL(f)
+            }
+            $('drop').onclick = () => $('imgFiles').click()
+
+            /* ===== Source toggle ===== */
+            document.querySelectorAll('input[name="src"]').forEach((r) => {
+                r.addEventListener('change', () => {
+                    const v = r.value
+                    $('imageControls').style.display =
+                        v === 'image' ? '' : 'none'
+                    $('videoControls').style.display =
+                        v === 'video' ? '' : 'none'
+                    $('video').style.display = v === 'video' ? '' : 'none'
+                    $('startRec').disabled = v !== 'video' || !depthSess
+                    $('stopRec').disabled = true
+                })
+            })
+
+            /* ===== Helpers ===== */
+            function toDepthTensor(bitmap, w, h, size) {
+                const { ctx } = acquireCanvas(`depth_${size}`, size, size)
+                const side = Math.min(w, h),
+                    sx = (w - side) / 2,
+                    sy = (h - side) / 2
+                ctx.drawImage(bitmap, sx, sy, side, side, 0, 0, size, size)
+                const rgba = ctx.getImageData(0, 0, size, size).data
+                const area = size * size
+                const out = acquireFloat32(`depth_tensor_${size}`, 3 * area)
+                let p = 0,
+                    r0 = 0,
+                    g0 = area,
+                    b0 = 2 * area
+                for (let i = 0; i < rgba.length; i += 4) {
+                    out[r0 + p] = rgba[i] / 255
+                    out[g0 + p] = rgba[i + 1] / 255
+                    out[b0 + p] = rgba[i + 2] / 255
+                    p++
+                }
+                return new ort.Tensor('float32', out, [1, 3, size, size])
+            }
+            function toCHW(bitmap, w, h, size) {
+                const { ctx } = acquireCanvas(`chw_${size}`, size, size)
+                const s = Math.min(size / w, size / h),
+                    nw = Math.round(w * s),
+                    nh = Math.round(h * s)
+                const offx = ((size - nw) / 2) | 0,
+                    offy = ((size - nh) / 2) | 0
+                ctx.fillStyle = '#000'
+                ctx.fillRect(0, 0, size, size)
+                ctx.drawImage(bitmap, 0, 0, w, h, offx, offy, nw, nh)
+                const rgba = ctx.getImageData(0, 0, size, size).data
+                const area = size * size
+                const out = acquireFloat32(`chw_tensor_${size}`, 3 * area)
+                let p = 0,
+                    r0 = 0,
+                    g0 = area,
+                    b0 = 2 * area
+                for (let i = 0; i < rgba.length; i += 4) {
+                    out[r0 + p] = rgba[i] / 255
+                    out[g0 + p] = rgba[i + 1] / 255
+                    out[b0 + p] = rgba[i + 2] / 255
+                    p++
+                }
+                return {
+                    tensor: new ort.Tensor('float32', out, [1, 3, size, size]),
+                    pad: { offx, offy, scale: s, size }
+                }
+            }
+            function yoloDecode(
+                outTensor,
+                pad,
+                origW,
+                origH,
+                confTh = 0.25,
+                nmsTh = 0.45
+            ) {
+                const data = outTensor.data || outTensor,
+                    dims = outTensor.dims || []
+                let num = 0,
+                    step = 0,
+                    off = 0
+                if (dims.length === 3 && dims[2] === 84) {
+                    num = dims[1]
+                    step = 84
+                    off = 1
+                } else if (dims.length === 3 && dims[1] === 84) {
+                    num = dims[2]
+                    step = 1
+                    off = 84
+                } else {
+                    num = Math.floor(data.length / 84)
+                    step = 84
+                    off = 1
+                }
+                const boxes = []
+                const S = pad.size
+                for (let i = 0; i < num; i++) {
+                    const p = i * step,
+                        x = data[p + 0 * off],
+                        y = data[p + 1 * off],
+                        w = data[p + 2 * off],
+                        h = data[p + 3 * off]
+                    let best = -1,
+                        cls = -1
+                    for (let k = 5; k < 84; k++) {
+                        if (data[p + k * off] > best) {
+                            best = data[p + k * off]
+                            cls = k - 5
+                        }
+                    }
+                    const obj = 1 / (1 + Math.exp(-data[p + 4 * off])),
+                        conf = obj * (1 / (1 + Math.exp(-best)))
+                    if (conf < confTh) continue
+                    const bx = (x - pad.offx) / pad.scale,
+                        by = (y - pad.offy) / pad.scale,
+                        bw = w / pad.scale,
+                        bh = h / pad.scale
+                    const cx = bx - (S - origW) / 2,
+                        cy = by - (S - origH) / 2
+                    boxes.push({
+                        x: cx - bw / 2,
+                        y: cy - bh / 2,
+                        w: bw,
+                        h: bh,
+                        conf,
+                        cls
+                    })
+                }
+                boxes.sort((a, b) => b.conf - a.conf)
+                const out = []
+                for (const b of boxes) {
+                    let keep = true
+                    for (const o of out) {
+                        const x1 = Math.max(b.x, o.x),
+                            y1 = Math.max(b.y, o.y)
+                        const x2 = Math.min(b.x + b.w, o.x + o.w),
+                            y2 = Math.min(b.y + b.h, o.y + o.h)
+                        const inter =
+                            Math.max(0, x2 - x1) * Math.max(0, y2 - y1)
+                        const iou =
+                            inter / (b.w * b.h + o.w * o.h - inter + 1e-9)
+                        if (iou > nmsTh) {
+                            keep = false
+                            break
+                        }
+                    }
+                    if (keep) out.push(b)
+                }
+                return out
+            }
+            const depthPreviewIndexCache = new Map()
+            function getDepthPreviewIndices(srcW, srcH, dstW, dstH) {
+                const key = `${srcW}x${srcH}->${dstW}x${dstH}`
+                let entry = depthPreviewIndexCache.get(key)
+                if (!entry) {
+                    const xIdx = new Uint16Array(dstW)
+                    const yIdx = new Uint16Array(dstH)
+                    for (let X = 0; X < dstW; X++) {
+                        xIdx[X] = Math.min(srcW - 1, ((X * srcW) / dstW) | 0)
+                    }
+                    for (let Y = 0; Y < dstH; Y++) {
+                        yIdx[Y] = Math.min(srcH - 1, ((Y * srcH) / dstH) | 0)
+                    }
+                    entry = { xIdx, yIdx }
+                    depthPreviewIndexCache.set(key, entry)
+                }
+                return entry
+            }
+
+            function depthRangeApprox(values, lower = 0.05, upper = 0.95) {
+                let min = Infinity,
+                    max = -Infinity,
+                    valid = 0
+                for (let i = 0; i < values.length; i++) {
+                    const v = values[i]
+                    if (!Number.isFinite(v)) continue
+                    if (v < min) min = v
+                    if (v > max) max = v
+                    valid++
+                }
+                if (!valid || !(max > min)) {
+                    const base = Number.isFinite(min) ? min : 0
+                    return { low: base, high: base + 1 }
+                }
+                const bins = acquireUint32('depth_hist', 512)
+                const range = max - min
+                for (let i = 0; i < values.length; i++) {
+                    const v = values[i]
+                    if (!Number.isFinite(v)) continue
+                    const norm = (v - min) / range
+                    const idx = Math.min(511, Math.max(0, Math.floor(norm * 511)))
+                    bins[idx]++
+                }
+                const targetLow = Math.floor(lower * (valid - 1))
+                const targetHigh = Math.floor(upper * (valid - 1))
+                let cumulative = 0,
+                    low = min,
+                    high = max,
+                    lowFound = false,
+                    highFound = false
+                for (let i = 0; i < bins.length; i++) {
+                    cumulative += bins[i]
+                    if (!lowFound && cumulative > targetLow) {
+                        low = min + (i / 511) * range
+                        lowFound = true
+                    }
+                    if (!highFound && cumulative > targetHigh) {
+                        high = min + (i / 511) * range
+                        highFound = true
+                        break
+                    }
+                }
+                if (!(high > low)) high = low + 1
+                return { low, high }
+            }
+
+            const depthPreviewCanvasKey = 'depth_preview_canvas'
+            function depthPreviewFromF32(dLow, wLow, hLow, W, H) {
+                const entry = acquireCanvas(depthPreviewCanvasKey, W, H)
+                const { canvas, ctx } = entry
+                if (!entry.depthImage || entry.depthImage.width !== W || entry.depthImage.height !== H) {
+                    entry.depthImage = new ImageData(W, H)
+                }
+                const imgData = entry.depthImage
+                const data = imgData.data
+                const { low, high } = depthRangeApprox(dLow)
+                const inv = high > low ? 1 / (high - low) : 1
+                const { xIdx, yIdx } = getDepthPreviewIndices(wLow, hLow, W, H)
+                let ptr = 0
+                for (let Y = 0; Y < H; Y++) {
+                    const base = yIdx[Y] * wLow
+                    for (let X = 0; X < W; X++) {
+                        const raw = dLow[base + xIdx[X]]
+                        const norm = Math.min(
+                            1,
+                            Math.max(0, Number.isFinite(raw) ? (raw - low) * inv : 0)
+                        )
+                        const r = Math.round(
+                            255 * Math.max(0, Math.min(1, -0.5 + 2.8 * norm))
+                        )
+                        const g = Math.round(
+                            255 * Math.max(0, Math.min(1, -0.1 + 2.5 * norm))
+                        )
+                        const b = Math.round(255 * (1 - 0.9 * norm))
+                        data[ptr++] = r
+                        data[ptr++] = g
+                        data[ptr++] = b
+                        data[ptr++] = 255
+                    }
+                }
+                ctx.putImageData(imgData, 0, 0)
+                return canvas
+            }
+
+            /* Backproject, with K scaled to depth resolution */
+            function scaleIntrinsicsTo({ K, fromW, fromH, toW, toH }) {
+                const sx = toW / fromW,
+                    sy = toH / fromH
+                return {
+                    fx: K.fx * sx,
+                    fy: K.fy * sy,
+                    cx: K.cx * sx,
+                    cy: K.cy * sy,
+                    skew: K.skew || 0
+                }
+            }
+            function backprojectToPointCloudFloat32({
+                depthF32,
+                H,
+                W,
+                Kd,
+                rgbCtx = null
+            }) {
+                const { fx, fy, cx, cy } = Kd
+                const N = H * W
+                const xyz = new Float32Array(N * 3)
+                let colorsU8 = null
+                if (rgbCtx) {
+                    const id = rgbCtx.getImageData(0, 0, W, H).data
+                    colorsU8 = new Uint8Array(N * 3)
+                    for (let i = 0, j = 0; i < id.length; i += 4, j += 3) {
+                        colorsU8[j] = id[i]
+                        colorsU8[j + 1] = id[i + 1]
+                        colorsU8[j + 2] = id[i + 2]
+                    }
+                }
+                let c = 0
+                for (let y = 0; y < H; y++) {
+                    for (let x = 0; x < W; x++) {
+                        const Z = depthF32[y * W + x]
+                        if (Z > 0 && isFinite(Z)) {
+                            xyz[c++] = ((x - cx) * Z) / fx
+                            xyz[c++] = ((y - cy) * Z) / fy
+                            xyz[c++] = Z
+                        } else {
+                            xyz[c++] = NaN
+                            xyz[c++] = NaN
+                            xyz[c++] = NaN
+                        }
+                    }
+                }
+                return { xyz, colorsU8 }
+            }
+
+            /* ===== Intrinsics estimation ===== */
+            async function estimateIntrFromCanvas() {
+                const bmp = await createImageBitmap(view)
+                const ladder = window.createIntrinsicsLadder({
+                    fovOnnxSession:
+                        window.predictFovDeg && fovSess ? fovSess : null
+                })
+                const intr = await ladder.estimate({
+                    imageBitmap: bmp,
+                    width: view.width,
+                    height: view.height
+                })
+                chip(
+                    $('s_intr'),
+                    `INTR: ${intr.source.rung.toUpperCase()} (${(intr.confidence * 100) | 0}%)`,
+                    intr.confidence >= 0.5
+                )
+                return intr
+            }
+
+            /* ===== Single image processing ===== */
+            $('processOne').onclick = async (e) => {
+                e.preventDefault()
+                if (!currentImage) {
+                    log('Pick an image first.', 'warn')
+                    return
+                }
+                if (!depthSess) {
+                    log('Load a depth ONNX first.', 'warn')
+                    return
+                }
+                showLoading()
+                try {
+                    vctx.drawImage(currentImage, 0, 0, view.width, view.height)
+                    const intr = await estimateIntrFromCanvas()
+                    lastIntr = intr
+                    const dsize = parseInt($('depthSize').value, 10)
+                    const dt = toDepthTensor(
+                        currentImage,
+                        currentImage.naturalWidth,
+                        currentImage.naturalHeight,
+                        dsize
+                    )
+                    chip(
+                        $('s_depth'),
+                        $('s_depth').textContent.replace(/:.*/, '') + ': running…',
+                        null
+                    )
+                    const dout = await depthSess.run({ [depthIn]: dt })
+                    const outT = dout[depthOut] || Object.values(dout)[0]
+                    let dh = dsize,
+                        dw = dsize
+                    if (outT.dims?.length === 4) {
+                        dh = outT.dims[2]
+                        dw = outT.dims[3]
+                    } else if (outT.dims?.length === 3) {
+                        dh = outT.dims[1]
+                        dw = outT.dims[2]
+                    } else if (outT.dims?.length === 2) {
+                        dh = outT.dims[0]
+                        dw = outT.dims[1]
+                    }
+                    const dArr = outT.data,
+                        f32 = new Float32Array(dh * dw)
+                    f32.set(
+                        dArr.subarray
+                            ? dArr.subarray(0, dh * dw)
+                            : Array.from(dArr).slice(0, dh * dw)
+                    )
+                    chip($('s_depth'), 'DEPTH: ok', true)
+
+                    let boxes = null
+                    if (yoloSess) {
+                        try {
+                            const yprep = toCHW(
+                                currentImage,
+                                currentImage.naturalWidth,
+                                currentImage.naturalHeight,
+                                640
+                            )
+                            const yout = await yoloSess.run({
+                                [yoloIn]: yprep.tensor
+                            })
+                            boxes = yoloDecode(
+                                yout[yoloOut] || Object.values(yout)[0],
+                                yprep.pad,
+                                view.width,
+                                view.height,
+                                0.25
+                            )
+                            if ($('drawYOLOChk').checked) drawYOLO(vctx, boxes)
+                            chip($('s_yolo'), 'YOLO: ok', true)
+                        } catch (err) {
+                            chip($('s_yolo'), 'YOLO: failed', false)
+                        }
+                    }
+
+                    if ($('drawDepthChk').checked) {
+                        const overlay = depthPreviewFromF32(
+                            f32,
+                            dw,
+                            dh,
+                            view.width,
+                            view.height
+                        )
+                        vctx.globalAlpha = 0.4
+                        vctx.drawImage(overlay, 0, 0)
+                        vctx.globalAlpha = 1
+                    }
+
+                    lastResults = {
+                        intr,
+                        R: [
+                            [1, 0, 0],
+                            [0, 1, 0],
+                            [0, 0, 1]
+                        ],
+                        depth: { data: f32, w: dw, h: dh },
+                        boxes,
+                        metersPerUnit: Number($('scaleMeters').value) || 1.0,
+                        frameW: view.width,
+                        frameH: view.height,
+                        posterSource: 'canvas'
+                    }
+                    $('saveVDSX').disabled = false
+                    log('Processing complete!', 'ok')
+                } catch (err) {
+                    log('Unexpected error: ' + err.message, 'error')
+                } finally {
+                    hideLoading()
+                }
+            }
+
+            /* ===== Camera / real-time loop ===== */
+            $('startCam').onclick = async (e) => {
+                e.preventDefault()
+                try {
+                    if (stream) stream.getTracks().forEach((t) => t.stop())
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: 'environment',
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        },
+                        audio: false
+                    })
+                    video.srcObject = stream
+                    await video.play()
+                    view.width = video.videoWidth || 640
+                    view.height = video.videoHeight || 480
+                    running = true
+                    fpsCounter = 0
+                    fpsLastTs = performance.now()
+                    frameTimer = 0
+                    log(`Camera: ${view.width}×${view.height}`, 'ok')
+                    runLoop()
+                } catch (err) {
+                    log('Camera error: ' + err.message, 'error')
+                }
+            }
+
+            $('stopCam').onclick = (e) => {
+                e.preventDefault()
+                running = false
+                if (stream) {
+                    stream.getTracks().forEach((t) => t.stop())
+                    stream = null
+                }
+            }
+
+            function runLoop(ts = performance.now()) {
+                if (!running) return
+                const interval = 1000 / Math.max(1, Number($('tgtFps').value) || 60)
+                if (!frameTimer) frameTimer = ts
+                const elapsed = ts - frameTimer
+                if (elapsed >= interval) {
+                    frameTimer = ts - (elapsed % interval)
+                    processVideoFrame()
+                }
+                requestAnimationFrame(runLoop)
+            }
+
+            function maybeUpdateFps() {
+                fpsCounter++
+                const now = performance.now()
+                if (now - fpsLastTs >= 1000) {
+                    const fps = fpsCounter / ((now - fpsLastTs) / 1000)
+                    chip($('s_fps'), `FPS: ${fps.toFixed(1)}`, fps >= 30)
+                    fpsCounter = 0
+                    fpsLastTs = now
+                }
+            }
+
+            async function processVideoFrame() {
+                if (!depthSess || !running || inferBusy) return
+                inferBusy = true
+                try {
+                    vctx.drawImage(video, 0, 0, view.width, view.height)
+                    let intr = lastIntr
+                    if ($('perFrameIntr').checked || !intr) {
+                        intr = await estimateIntrFromCanvas()
+                        lastIntr = intr
+                    }
+
+                    const dsize = parseInt($('depthSize').value, 10)
+                    const dt = toDepthTensor(
+                        video,
+                        video.videoWidth,
+                        video.videoHeight,
+                        dsize
+                    )
+                    const dout = await depthSess.run({ [depthIn]: dt })
+                    const outT = dout[depthOut] || Object.values(dout)[0]
+                    let dh = dsize,
+                        dw = dsize
+                    if (outT.dims?.length === 4) {
+                        dh = outT.dims[2]
+                        dw = outT.dims[3]
+                    } else if (outT.dims?.length === 3) {
+                        dh = outT.dims[1]
+                        dw = outT.dims[2]
+                    } else if (outT.dims?.length === 2) {
+                        dh = outT.dims[0]
+                        dw = outT.dims[1]
+                    }
+                    const dArr = outT.data,
+                        f32 = new Float32Array(dh * dw)
+                    f32.set(
+                        dArr.subarray
+                            ? dArr.subarray(0, dh * dw)
+                            : Array.from(dArr).slice(0, dh * dw)
+                    )
+
+                    if ($('drawDepthChk').checked) {
+                        const overlay = depthPreviewFromF32(
+                            f32,
+                            dw,
+                            dh,
+                            view.width,
+                            view.height
+                        )
+                        vctx.globalAlpha = 0.35
+                        vctx.drawImage(overlay, 0, 0)
+                        vctx.globalAlpha = 1
+                    }
+
+                    let boxes = null
+                    if (yoloSess) {
+                        try {
+                            const yprep = toCHW(
+                                video,
+                                video.videoWidth,
+                                video.videoHeight,
+                                640
+                            )
+                            const yout = await yoloSess.run({
+                                [yoloIn]: yprep.tensor
+                            })
+                            boxes = yoloDecode(
+                                yout[yoloOut] || Object.values(yout)[0],
+                                yprep.pad,
+                                view.width,
+                                view.height,
+                                0.25
+                            )
+                            if ($('drawYOLOChk').checked) {
+                                vctx.save()
+                                vctx.strokeStyle = '#38f2a5'
+                                vctx.lineWidth = 2
+                                vctx.fillStyle = 'rgba(0,0,0,.65)'
+                                vctx.font = 'bold 12px ui-monospace'
+                                for (const b of boxes) {
+                                    vctx.strokeRect(b.x, b.y, b.w, b.h)
+                                    const lbl = `cls${b.cls} ${(b.conf * 100).toFixed(1)}%`
+                                    const tw = vctx.measureText(lbl).width + 8,
+                                        th = 18
+                                    vctx.fillRect(
+                                        b.x,
+                                        Math.max(0, b.y - th),
+                                        tw,
+                                        th
+                                    )
+                                    vctx.fillStyle = '#38f2a5'
+                                    vctx.fillText(lbl, b.x + 4, b.y - 5)
+                                    vctx.fillStyle = 'rgba(0,0,0,.65)'
+                                }
+                                vctx.restore()
+                            }
+                        } catch {}
+                    }
+
+                    // Save buffers if recording (with stride)
+                    if (recording) {
+                        const stride = Math.max(
+                            1,
+                            Number($('frameStride').value) || 1
+                        )
+                        if (recFrames % stride === 0) {
+                            const metersPerUnit =
+                                Number($('scaleMeters').value) || 1.0
+                            // depth copy
+                            recDepths.push({
+                                data: new Float32Array(f32),
+                                w: dw,
+                                h: dh,
+                                metersPerUnit
+                            })
+
+                            // per-frame intrinsics at depth scale for point cloud lifting
+                            const Kd = scaleIntrinsicsTo({
+                                K: intr.K,
+                                fromW: view.width,
+                                fromH: view.height,
+                                toW: dw,
+                                toH: dh
+                            })
+
+                            if ($('retentionMode').value === 'FULL') {
+                                // RGB at depth resolution for per-point color
+                                const rgbCan = document.createElement('canvas')
+                                rgbCan.width = dw
+                                rgbCan.height = dh
+                                const rgbCtx = rgbCan.getContext('2d')
+                                rgbCtx.drawImage(
+                                    view,
+                                    0,
+                                    0,
+                                    view.width,
+                                    view.height,
+                                    0,
+                                    0,
+                                    dw,
+                                    dh
+                                )
+
+                                const { xyz, colorsU8 } =
+                                    backprojectToPointCloudFloat32({
+                                        depthF32: f32,
+                                        H: dh,
+                                        W: dw,
+                                        Kd,
+                                        rgbCtx
+                                    })
+                                recPointXYZ.push(xyz)
+                                recPointRGB.push(colorsU8) // may be null
+                                // RGB frame (poster) for this frame
+                                const jpeg = await new Promise((res) =>
+                                    rgbCan.toBlob(
+                                        (b) => res(b),
+                                        'image/jpeg',
+                                        0.85
+                                    )
+                                )
+                                recRGBJpegs.push(jpeg)
+                            }
+                            recYOLO.push(boxes || [])
+                            recIntrByFrame.push({
+                                K: intr.K,
+                                depthSize: [dh, dw]
+                            })
+                        }
+                        recFrames++
+                        chip(
+                            $('s_rec'),
+                            `REC: ${recDepths.length} frames`,
+                            true
+                        )
+                    }
+
+                    maybeUpdateFps()
+                } catch (err) {
+                    log('Realtime error: ' + err.message, 'warn')
+                } finally {
+                    inferBusy = false
+                }
+            }
+
+            /* ===== Save current frame (image mode or live) ===== */
+            $('saveVDSX').onclick = async (e) => {
+                e.preventDefault()
+                if (!lastResults) {
+                    log('No results yet.', 'warn')
+                    return
+                }
+                showLoading()
+                try {
+                    await saveVDSXSingle(lastResults, $('retentionMode').value)
+                } catch (err) {
+                    log('Save error: ' + err.message, 'error')
+                } finally {
+                    hideLoading()
+                }
+            }
+            async function saveVDSXSingle(res, retentionMode) {
+                const { intr, R, depth, boxes, metersPerUnit, frameW, frameH } =
+                    res
+                const H = depth.h,
+                    W = depth.w
+                const zip = new JSZip()
+                const now = new Date().toISOString()
+                const manifest = {
+                    vdsx_version: '1.4',
+                    created_utc: now,
+                    kind: 'image',
+                    dimensions: { width: frameW, height: frameH },
+                    retention_mode: retentionMode,
+                    layers: {
+                        rgb: retentionMode === 'FULL',
+                        intrinsics: true,
+                        extrinsics: true,
+                        sensors: { gps: false, imu: false },
+                        semantics: { yolo: boxes ? 1 : 0, seg: 0 },
+                        depth: {
+                            format: 'float32-bin',
+                            frames: 1,
+                            size: [H, W],
+                            channels: 1,
+                            meters_per_unit: metersPerUnit
+                        }
+                    }
+                }
+                __applyWatermark(manifest)
+                zip.file('manifest.json', JSON.stringify(manifest, null, 2))
+                zip.file(
+                    'calib/intrinsics.json',
+                    JSON.stringify(
+                        {
+                            width: frameW,
+                            height: frameH,
+                            fx: intr.K.fx,
+                            fy: intr.K.fy,
+                            cx: intr.K.cx,
+                            cy: intr.K.cy,
+                            skew: intr.K.skew || 0,
+                            model: intr.model,
+                            source: intr.source,
+                            confidence: intr.confidence,
+                            qc: intr.qc
+                        },
+                        null,
+                        2
+                    )
+                )
+                zip.file(
+                    'calib/extrinsics.json',
+                    JSON.stringify(
+                        {
+                            R,
+                            t: [0, 0, 0],
+                            note: 'Single-view; scale via meters_per_unit.'
+                        },
+                        null,
+                        2
+                    )
+                )
+                zip.file(
+                    'depth/depth_0001.bin',
+                    new Blob([depth.data.buffer], {
+                        type: 'application/octet-stream'
+                    })
+                )
+                zip.file(
+                    'depth/depth.meta.json',
+                    JSON.stringify(
+                        {
+                            dtype: 'float32',
+                            shape: [H, W],
+                            count: 1,
+                            stride: 1,
+                            meters_per_unit: metersPerUnit
+                        },
+                        null,
+                        2
+                    )
+                )
+                if (boxes) {
+                    zip.file(
+                        'semantics/yolo.json',
+                        JSON.stringify({ frames: [boxes] }, null, 2)
+                    )
+                }
+
+                if (retentionMode === 'FULL') {
+                    // poster
+                    const poster = await new Promise((res) =>
+                        view.toBlob((b) => res(b), 'image/jpeg', 0.92)
+                    )
+                    if (poster) zip.file('rgb/poster.jpg', poster)
+
+                    // pointcloud (first frame)
+                    const Kd = scaleIntrinsicsTo({
+                        K: intr.K,
+                        fromW: frameW,
+                        fromH: frameH,
+                        toW: W,
+                        toH: H
+                    })
+                    const rgbCan = document.createElement('canvas')
+                    rgbCan.width = W
+                    rgbCan.height = H
+                    const rgbCtx = rgbCan.getContext('2d')
+                    rgbCtx.drawImage(view, 0, 0, frameW, frameH, 0, 0, W, H)
+                    const { xyz, colorsU8 } = backprojectToPointCloudFloat32({
+                        depthF32: depth.data,
+                        H,
+                        W,
+                        Kd,
+                        rgbCtx
+                    })
+                    zip.file(
+                        'pointcloud/points_0001.bin',
+                        new Blob([xyz.buffer], {
+                            type: 'application/octet-stream'
+                        })
+                    )
+                    zip.file(
+                        'pointcloud/points.bin',
+                        new Blob([xyz.buffer], {
+                            type: 'application/octet-stream'
+                        })
+                    ) // compatibility
+                    if (colorsU8) {
+                        zip.file(
+                            'pointcloud/colors_0001.bin',
+                            new Blob([colorsU8.buffer], {
+                                type: 'application/octet-stream'
+                            })
+                        )
+                    }
+                    zip.file(
+                        'pointcloud/points.meta.json',
+                        JSON.stringify(
+                            {
+                                dtype: 'float32',
+                                layout: 'xyz',
+                                size: [H, W],
+                                count: 1,
+                                colors: !!colorsU8
+                            },
+                            null,
+                            2
+                        )
+                    )
+                    manifest.layers.pointcloud = {
+                        format: 'bin',
+                        frames: 1,
+                        dtype: 'float32',
+                        layout: 'xyz',
+                        size: [H, W],
+                        colors: colorsU8 ? 'uint8x3' : null
+                    }
+                    __applyWatermark(manifest)
+                    zip.file('manifest.json', JSON.stringify(manifest, null, 2)) // rewrite with pointcloud
+                }
+
+                zip.file(
+                    'meta/provenance.json',
+                    JSON.stringify(
+                        __watermarkProvenance({
+                            tool: 'Image→VDSX (single frame)',
+                            ts: now,
+                            ep: $('s_ep').textContent.replace('EP: ', ''),
+                            notes: 'Generated from in-browser processing.'
+                        }),
+                        null,
+                        2
+                    )
+                )
+
+                const blob = await zip.generateAsync({
+                    type: 'blob',
+                    compression: 'DEFLATE',
+                    compressionOptions: { level: 5 }
+                })
+                const name = `vdsx_frame_${frameW}x${frameH}_${Date.now()}.vdsx`
+                const a = document.createElement('a')
+                a.download = name
+                a.href = URL.createObjectURL(blob)
+                document.body.appendChild(a)
+                a.click()
+                setTimeout(() => {
+                    URL.revokeObjectURL(a.href)
+                    document.body.removeChild(a)
+                }, 600)
+                log(`Saved ${name}`, 'ok')
+            }
+
+            /* ===== RECORDING (multi-frame VDSX) ===== */
+            $('startRec').onclick = (e) => {
+                e.preventDefault()
+                if (recording) {
+                    return
+                }
+                if (!depthSess) {
+                    log('Load a depth model first.', 'warn')
+                    return
+                }
+                recZip = new JSZip()
+                recording = true
+                recFrames = 0
+                recDepths.length = 0
+                recYOLO.length = 0
+                recRGBJpegs.length = 0
+                recPointXYZ.length = 0
+                recPointRGB.length = 0
+                recIntrByFrame.length = 0
+                recCfg = {
+                    retention: $('retentionMode').value,
+                    up: $('upSel').value,
+                    metersPerUnit: Number($('scaleMeters').value) || 1.0
+                }
+                chip($('s_rec'), 'REC: 0 frames', true)
+                $('stopRec').disabled = false
+                log('Recording started (capturing processed frames).', 'ok')
+            }
+            $('stopRec').onclick = async (e) => {
+                e.preventDefault()
+                if (!recording) return
+                recording = false
+                chip($('s_rec'), 'REC: idle')
+                $('stopRec').disabled = true
+                showLoading()
+                try {
+                    await finalizeRecordingVDSX()
+                } catch (err) {
+                    log('Record save error: ' + err.message, 'error')
+                } finally {
+                    hideLoading()
+                }
+            }
+
+            async function finalizeRecordingVDSX() {
+                const frameCount = recDepths.length
+                if (frameCount === 0) {
+                    log('No frames captured.', 'warn')
+                    return
+                }
+                const frameW = view.width,
+                    frameH = view.height
+                const now = new Date().toISOString()
+                const manifest = {
+                    vdsx_version: '1.4',
+                    created_utc: now,
+                    kind: 'video',
+                    dimensions: { width: frameW, height: frameH },
+                    retention_mode: recCfg.retention,
+                    layers: {
+                        rgb: recCfg.retention === 'FULL',
+                        intrinsics: true,
+                        extrinsics: true,
+                        sensors: { gps: false, imu: false },
+                        semantics: { yolo: 1, seg: 0 },
+                        depth: {
+                            format: 'float32-bin',
+                            frames: frameCount,
+                            size: [recDepths[0].h, recDepths[0].w],
+                            channels: 1,
+                            meters_per_unit: recCfg.metersPerUnit
+                        }
+                    }
+                }
+                __applyWatermark(manifest)
+                recZip.file('manifest.json', JSON.stringify(manifest, null, 2))
+
+                // calib (global intrinsics saved as "typical" — per frame intr stored separately)
+                const intr0 = recIntrByFrame[0]?.K ||
+                    lastIntr?.K || {
+                        fx: frameW,
+                        fy: frameW,
+                        cx: frameW / 2,
+                        cy: frameH / 2,
+                        skew: 0
+                    }
+                recZip.file(
+                    'calib/intrinsics.json',
+                    JSON.stringify(
+                        {
+                            width: frameW,
+                            height: frameH,
+                            fx: intr0.fx,
+                            fy: intr0.fy,
+                            cx: intr0.cx,
+                            cy: intr0.cy,
+                            skew: intr0.skew || 0,
+                            model: 'pinhole_browndecenter(0)'
+                        },
+                        null,
+                        2
+                    )
+                )
+                recZip.file(
+                    'calib/extrinsics.json',
+                    JSON.stringify(
+                        {
+                            R: [
+                                [1, 0, 0],
+                                [0, 1, 0],
+                                [0, 0, 1]
+                            ],
+                            t: [0, 0, 0],
+                            note: 'Single-view stream; scale via meters_per_unit.'
+                        },
+                        null,
+                        2
+                    )
+                )
+
+                // per-frame intrinsics map (optional but handy)
+                recZip.file(
+                    'calib/frames/intrinsics.index.json',
+                    JSON.stringify(
+                        {
+                            frames: recIntrByFrame.map((f, i) => ({
+                                i: i + 1,
+                                K: f.K,
+                                depth_size: f.depthSize
+                            }))
+                        },
+                        null,
+                        2
+                    )
+                )
+
+                // depth frames + meta
+                const H = recDepths[0].h,
+                    W = recDepths[0].w
+                for (let i = 0; i < frameCount; i++) {
+                    const idx = String(i + 1).padStart(4, '0')
+                    recZip.file(
+                        `depth/depth_${idx}.bin`,
+                        new Blob([recDepths[i].data.buffer], {
+                            type: 'application/octet-stream'
+                        })
+                    )
+                }
+                recZip.file(
+                    'depth/depth.meta.json',
+                    JSON.stringify(
+                        {
+                            dtype: 'float32',
+                            shape: [H, W],
+                            count: frameCount,
+                            stride: 1,
+                            meters_per_unit: recCfg.metersPerUnit
+                        },
+                        null,
+                        2
+                    )
+                )
+
+                // YOLO per frame
+                recZip.file(
+                    'semantics/yolo.json',
+                    JSON.stringify({ frames: recYOLO }, null, 2)
+                )
+
+                if (recCfg.retention === 'FULL') {
+                    // RGB frames (posters)
+                    for (let i = 0; i < frameCount; i++) {
+                        const idx = String(i + 1).padStart(4, '0')
+                        if (recRGBJpegs[i])
+                            recZip.file(`rgb/frame_${idx}.jpg`, recRGBJpegs[i])
+                    }
+                    // Pointcloud per frame
+                    for (let i = 0; i < frameCount; i++) {
+                        const idx = String(i + 1).padStart(4, '0')
+                        const xyz = recPointXYZ[i]
+                        const rgb = recPointRGB[i]
+                        if (!xyz) continue
+                        recZip.file(
+                            `pointcloud/points_${idx}.bin`,
+                            new Blob([xyz.buffer], {
+                                type: 'application/octet-stream'
+                            })
+                        )
+                        if (i === 0) {
+                            // compatibility single alias for first frame
+                            recZip.file(
+                                'pointcloud/points.bin',
+                                new Blob([xyz.buffer], {
+                                    type: 'application/octet-stream'
+                                })
+                            )
+                        }
+                        if (rgb) {
+                            recZip.file(
+                                `pointcloud/colors_${idx}.bin`,
+                                new Blob([rgb.buffer], {
+                                    type: 'application/octet-stream'
+                                })
+                            )
+                        }
+                    }
+                    recZip.file(
+                        'pointcloud/points.meta.json',
+                        JSON.stringify(
+                            {
+                                dtype: 'float32',
+                                layout: 'xyz',
+                                size: [H, W],
+                                count: frameCount,
+                                colors: !!recPointRGB[0]
+                            },
+                            null,
+                            2
+                        )
+                    )
+                    manifest.layers.pointcloud = {
+                        format: 'bin',
+                        frames: frameCount,
+                        dtype: 'float32',
+                        layout: 'xyz',
+                        size: [H, W],
+                        colors: recPointRGB[0] ? 'uint8x3' : null
+                    }
+                    __applyWatermark(manifest)
+                    recZip.file(
+                        'manifest.json',
+                        JSON.stringify(manifest, null, 2)
+                    ) // update
+                }
+
+                // provenance
+                recZip.file(
+                    'meta/provenance.json',
+                    JSON.stringify(
+                        __watermarkProvenance({
+                            tool: 'Video→VDSX (multi-frame)',
+                            ts: now,
+                            ep: $('s_ep').textContent.replace('EP: ', ''),
+                            notes: 'Frames captured at processing rate; frameStride may be >1.'
+                        }),
+                        null,
+                        2
+                    )
+                )
+
+                const blob = await recZip.generateAsync({
+                    type: 'blob',
+                    compression: 'DEFLATE',
+                    compressionOptions: { level: 5 }
+                })
+                const name = `vdsx_video_${frameW}x${frameH}_${frameCount}f_${Date.now()}.vdsx`
+                const a = document.createElement('a')
+                a.download = name
+                a.href = URL.createObjectURL(blob)
+                document.body.appendChild(a)
+                a.click()
+                setTimeout(() => {
+                    URL.revokeObjectURL(a.href)
+                    document.body.removeChild(a)
+                }, 600)
+                log(`Saved ${name}`, 'ok')
+                // reset buffers
+                recZip = null
+                recDepths.length = 0
+                recYOLO.length = 0
+                recRGBJpegs.length = 0
+                recPointXYZ.length = 0
+                recPointRGB.length = 0
+                recIntrByFrame.length = 0
+            }
+
+            /* ===== Save helpers & drawing ===== */
+            function drawYOLO(ctx, boxes) {
+                ctx.save()
+                ctx.strokeStyle = '#38f2a5'
+                ctx.lineWidth = 2
+                ctx.fillStyle = 'rgba(0,0,0,.65)'
+                ctx.font = 'bold 12px ui-monospace'
+                for (const b of boxes) {
+                    ctx.strokeRect(b.x, b.y, b.w, b.h)
+                    const lbl = `cls${b.cls} ${(b.conf * 100).toFixed(1)}%`,
+                        tw = ctx.measureText(lbl).width + 8,
+                        th = 18
+                    ctx.fillRect(b.x, Math.max(0, b.y - th), tw, th)
+                    ctx.fillStyle = '#38f2a5'
+                    ctx.fillText(lbl, b.x + 4, b.y - 5)
+                    ctx.fillStyle = 'rgba(0,0,0,.65)'
+                }
+                ctx.restore()
+            }
+
+            /* ===== Save current frame button (image/live) ===== */
+            async function saveVDSXSingleWrapper() {
+                if (!lastResults) {
+                    log('No results yet.', 'warn')
+                    return
+                }
+                await saveVDSXSingle(lastResults, $('retentionMode').value)
+            }
+
+            /* ===== FPS pacing loop ===== */
+            function requestDepth() {
+                /* helper if needed later */
+            }
+            function targetInterval() {
+                return 1000 / Math.max(1, Number($('tgtFps').value) || 60)
+            }
+
+            /* ===== UI enable/disable ===== */
+            document.addEventListener('DOMContentLoaded', () => {
+                log(
+                    'Ready. Load a depth model; then pick Image or start Camera.',
+                    'info'
+                )
+            })
+            window.addEventListener('beforeunload', () => {
+                try {
+                    stream?.getTracks?.().forEach((t) => t.stop())
+                } catch {}
+            })
+
+            /* ===== Enable Save / Record after first processing ===== */
+            const observer = new MutationObserver(() => {
+                if (depthSess) {
+                    $('startRec').disabled = false
+                }
+            })
+            observer.observe($('s_depth'), { childList: true })
+        </script>
+    </body>
+</html>
