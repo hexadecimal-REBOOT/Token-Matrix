@@ -1,149 +1,92 @@
-# 🌍 VDSX Family
+# Video-Depth-Anything Checkpoint Converter
 
-Visual Data Scene eXchange — Building the World in 3D, for Humans and AI
+This project delivers a full-stack workflow for turning Video-Depth-Anything checkpoints into ONNX models that can be executed in browsers or WebAssembly runtimes. The web UI lets you upload entire checkpoint folders, review the contents, tweak export settings, and trigger a FastAPI backend that performs the PyTorch→ONNX conversion.
 
-⸻
+## ✨ Features
 
-## 🔷 Overview
+- **Folder-aware uploader** – drag and drop checkpoint directories or select them via the file picker. The app keeps folder structure intact so the backend can reconstruct repositories.
+- **Interactive inspection** – see file sizes, paths, and quick previews for config or text files before exporting.
+- **Custom export options** – configure encoder variant, opset version, metric mode, input shapes, and dynamic axes.
+- **Server-side conversion** – FastAPI endpoint recreates the model definition, loads weights, and exports an ONNX file using `torch.onnx.export`.
+- **One-click download** – receive the generated ONNX file directly in the browser once conversion completes.
 
-VDSX is a next-generation 3D capture and reasoning framework that connects vision, geometry, and semantic understanding in real time.
-It turns any camera—mobile, embedded, or industrial—into a VDSX-enabled 3D scanner capable of generating structured, ontology-aware .vdsx scene files.
-
-Each .vdsx file encodes not just images, but depth, motion, segmentation, spatial alignment, and meaning—the building blocks of a living, searchable digital twin of the real world.
-
-The VDSX Family forms the infrastructure for planet-scale 3D understanding, where every captured frame contributes to a continuously learning world model.
-
-⸻
-
-## 🚀 Video Depth Anything WebAssembly Runner
-
-This repository now ships a zero-dependency browser app (`index.html`) that executes
-the official [Video-Depth-Anything](https://github.com/DepthAnything/Video-Depth-Anything)
-model locally via the WebAssembly backend of `onnxruntime-web`. The flow is optimised
-for Safari/iOS devices such as the iPhone 13 Pro Max, so the entire pipeline runs on
-device without leaving the browser sandbox.
-
-### How to export the model to ONNX
-
-1. Clone the upstream repository and install requirements:
-   ```bash
-   git clone https://github.com/DepthAnything/Video-Depth-Anything
-   cd Video-Depth-Anything
-   pip install -r requirements.txt
-   bash get_weights.sh
-   ```
-2. Export the checkpoint to ONNX using the helper shipped here:
-   ```bash
-   python /path/to/Token-Matrix/tools/export_vda_onnx.py \
-       --repo /path/to/Video-Depth-Anything \
-       --checkpoint checkpoints/video_depth_anything_vitl.pth \
-       --encoder vitl \
-       --output video_depth_anything_vitl.onnx
-   ```
-   Use `--metric` for the metric version of the model. The export preserves the
-   32-frame temporal window, matching the JavaScript pipeline.
-3. Serve this repository so that mobile Safari can load the Wasm assets:
-   ```bash
-   cd /path/to/Token-Matrix
-   python -m http.server 8000
-   ```
-4. Open `http://<host>:8000/index.html` on the target device, load the ONNX file,
-   select a video, and run inference. The UI exposes FPS, input-size, and metric-mode
-   toggles, and streams the resulting depth maps directly in the browser.
-
-## 🧩 Core Ecosystem
-
-| Module | Purpose | Description |
-| --- | --- | --- |
-| VDSX | Core Capture Protocol | Defines the core .vdsx standard — integrating RGB, depth, segmentation, and ontology layers into a unified format. It establishes the foundation for real-time 3D reconstruction and AI reasoning. |
-| VDSX Lite | Sensor-Enhanced Capture | Extends VDSX with IMU (Inertial Measurement Unit) and MIMO (Multi-Input Multi-Output) sensors for motion, orientation, and precision spatial tracking. Designed for mobile and field-level capture, enabling robust real-world scene reconstruction from handheld or moving cameras. |
-| VDSX Hardware | Edge & Embedded Runtime | Runs the VDSX protocol directly on FPGA/SoC devices and specialized boards (e.g., Nimbus N001/N010). Supports sensor fusion inputs (IMU, LiDAR, ToF, thermal, GNSS) and deterministic 3D scene encoding at the hardware layer for ultra-low-latency applications. |
-| VDSX Universal | Media, Gaming & Entertainment | The interoperability bridge connecting VDSX to creative industries. Import assets from Blender, Unreal, Unity, Maya, or GLTF, and export .vdsx data to cinematic, VR, or XR pipelines. Enables photo-realistic TSR rendering and hybrid workflows between real and synthetic scenes. |
-| VDSX Stereo | Multi-View Relative Depth | Solves relative depth estimation across stereo or multi-camera configurations. Performs disparity fusion, optical alignment, and motion-based parallax reconstruction for temporally consistent 3D data. |
-| VDSX Files | Data Structure & Retention | Defines the .vdsx file schema. A modular, quantum-signable container supporting retention modes (choose what to save) with file sizes from 300 KB to 4 GB. Supports depth bins, semantic layers, IMU/MIMO telemetry, and compression options for cloud or local storage. |
-| VDSX Global Indexing | Planet-Scale Mapping | Distributed 3D indexing system that aggregates all .vdsx captures. Supports real-time spatial search, semantic ontology linking, and geographic query resolution. Enables a global “Search the World in 3D” experience. |
-| 3DWOM | 3D World Observer Model | The AI model trained on VDSX data. Integrates geometry, semantics, and ontologies to create a reasoning model that understands the world physically — not just by pixels, but by relationships, function, and context. |
-
-⸻
-
-## 🧠 Why It’s Different
-
-Today’s AI sees pixels.
-
-Vision–language models like CLIP or GPT-4V recognize patterns, but lack geometry, permanence, and true spatial understanding.
-
-VDSX sees the world.
-
-VDSX integrates depth, motion, and meaning — allowing AI to understand how things exist and why they matter.
-
-It’s not just “That’s a fire hydrant.”
-It’s “That’s a fire hydrant, connected to a municipal water system, standardized in size, placed near road infrastructure, and governed by local utility regulations.”
-
-This leap — from semantic labeling to contextual reasoning — is what makes 3DWOM the first model capable of planning and understanding in true 3D space.
-
-⸻
-
-## 🧱 Architecture
+## 🗂 Project structure
 
 ```
-📦 VDSX Family
- ├── vdsx/                  # Core capture + reconstruction logic
- ├── vdsx-lite/             # IMU + MIMO sensor extension
- ├── vdsx-hardware/         # Edge + FPGA sensor fusion runtime
- ├── vdsx-files/            # File schema, retention, quantum signing
- ├── vdsx-universal/        # Blender/Unreal integration & exports
- ├── vdsx-stereo/           # Stereo & multi-view disparity solver
- ├── vdsx-global-indexing/  # Distributed 3D world search
- └── 3dwom/                 # 3D reasoning model training pipeline
+.
+├── index.html            # Front-end entry point
+├── static/
+│   ├── app.js           # Uploader logic, previews, API calls
+│   └── styles.css       # Tailored styling for the experience
+├── server/
+│   ├── main.py          # FastAPI application exposing /api/convert
+│   └── requirements.txt # Backend dependencies
+└── tools/
+    └── export_vda_onnx.py # CLI helper reused by the backend
 ```
 
-Each module interoperates through the NOLYN Protocol 0.1a for secure, post-quantum AI-to-AI communication.
+## 🚀 Getting started
 
-⸻
+### 1. Clone repositories
 
-## 🛰️ Example Workflow
+```bash
+git clone https://github.com/DepthAnything/Video-Depth-Anything
+# Clone this project next to it
+```
 
-1. **Capture** — A VDSX or VDSX Lite camera captures RGB, depth, IMU, and segmentation data in real time.
-2. **Generate .vdsx File** — Data is fused into a structured container with calibrated intrinsics, extrinsics, and ontology metadata.
-3. **Upload & Index** — Files are uploaded to the VDSX Global Index, where they’re spatially and semantically indexed.
-4. **Reconstruct & Render** — Using TSR (Triangle Splatting Rendering), 3D scenes are reconstructed with photo-realistic fidelity.
-5. **Train 3DWOM** — The AI learns physical understanding from billions of .vdsx samples — enabling world-scale reasoning.
-6. **Search & Query** — Users and agents can “search the world in 3D” — by object, concept, or ontology class.
+### 2. Backend setup
 
-⸻
+```bash
+cd Token-Matrix/server
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn main:app --reload
+```
 
-## 🚀 Scaling the Real World
+The FastAPI server exposes the following endpoints:
 
-By deploying VDSX Lite or VDSX Hardware devices across fleets (e.g., delivery vans or municipal garbage trucks),
-the system can map 80 % of the U.S. in under a year, capturing stereo and depth data at scale.
+- `GET /api/health` – health check returning `{ "status": "ok" }`
+- `POST /api/convert` – accepts uploaded files plus form parameters and returns an ONNX file
 
-Each frame contributes to 3DWOM’s evolving understanding of Earth — creating a shared digital twin usable for urban planning, robotics, simulation, and AI training.
+### 3. Front-end setup
 
-⸻
+The UI is static, so any HTTP server works:
 
-## 🔒 Restricted License
+```bash
+cd Token-Matrix
+python -m http.server 5173
+```
 
-**VDSX Restricted License (Company-Only) — Version 1.0 (2025-01-01)**
+Open `http://localhost:5173/index.html` in your browser. The UI targets `http://<host>:8000` by default; override this by defining `window.__VDA_API_BASE__` (or `window.__VDA_API_PORT__`) before loading `static/app.js` when embedding the app elsewhere.
 
-Designated Entity: **Nimbus LLC & Landon Crutchfield & McCoy Holdings**
+## 🧪 Upload expectations
 
-This repository is licensed exclusively to the Designated Entity and its employees or contractors operating under NDA. No redistribution, sublicensing, or external publication of the source, binaries, or derivative works is permitted. All other parties have zero rights to use or modify the contents of this project.
+1. Zip or drag the entire cloned Video-Depth-Anything repository including the `video_depth_anything` Python package.
+2. Ensure the checkpoint (`*.pth`, `*.pt`, or `*.ckpt`) lives somewhere within the uploaded folder structure.
+3. Choose export settings and press **Convert to ONNX**.
+4. Wait for the download to start automatically.
 
-Continued access requires compliance with the LICENSE file. For partnership discussions or bespoke commercial terms, contact
-[yannis@americanrobotics.io](mailto:yannis@americanrobotics.io)
+The backend reuses the logic in `tools/export_vda_onnx.py`, so the uploaded files must provide the same environment needed for the CLI exporter to succeed.
 
-⸻
+## ⚙️ Configuration parameters
 
-## 🧭 Mission
+| Field | Description |
+| --- | --- |
+| Encoder Variant | Selects the ViT backbone (`vits`, `vitb`, or `vitl`). |
+| Input Height / Width | Dummy tensor dimensions used during export. Must be multiples of 14. |
+| Sequence Length | Temporal window size for the exported model. |
+| Batch Size | Dummy batch size. Adjust if you plan to run multi-sample inference. |
+| ONNX Opset Version | Controls the ONNX opset passed to `torch.onnx.export`. |
+| Dynamic Axes | Enables dynamic batch/time/height/width axes in the ONNX graph. |
+| Metric Mode | Loads the metric variant of the model head. |
 
-“We’re not just scanning the world —
-we’re teaching AI to understand it.”
+## 🛡️ Error handling
 
-⸻
+- Missing checkpoints or repository code return HTTP 400 with actionable messages.
+- Allocation issues or export failures return HTTP 500 with the PyTorch/ONNX error message to simplify debugging.
+- Temporary upload directories are cleaned up automatically once the response is sent.
 
-# Token-Matrix
-Token Matrix: A context-aware language model system using vector databases for efficient token management. Optimizes token usage, enhances response relevance, and supports multi-context environments. Ideal for AI-powered applications requiring intelligent, context-sensitive language generation.
+## 📄 License
 
-## License
-
-This repository is governed by the VDSX Restricted License (Company-Only). All rights are reserved exclusively for NIMBUS LLC and Landon Crutchfield & McCoy Holdings, including their authorized personnel and contractors under NDA. Any other use, redistribution, or disclosure is strictly prohibited. See [LICENSE](LICENSE) for the full terms.
+This repository inherits the license terms defined in [LICENSE](LICENSE).
