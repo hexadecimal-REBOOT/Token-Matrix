@@ -15,6 +15,42 @@ The VDSX Family forms the infrastructure for planet-scale 3D understanding, wher
 
 ⸻
 
+## 🚀 Video Depth Anything WebAssembly Runner
+
+This repository now ships a zero-dependency browser app (`index.html`) that executes
+the official [Video-Depth-Anything](https://github.com/DepthAnything/Video-Depth-Anything)
+model locally via the WebAssembly backend of `onnxruntime-web`. The flow is optimised
+for Safari/iOS devices such as the iPhone 13 Pro Max, so the entire pipeline runs on
+device without leaving the browser sandbox.
+
+### How to export the model to ONNX
+
+1. Clone the upstream repository and install requirements:
+   ```bash
+   git clone https://github.com/DepthAnything/Video-Depth-Anything
+   cd Video-Depth-Anything
+   pip install -r requirements.txt
+   bash get_weights.sh
+   ```
+2. Export the checkpoint to ONNX using the helper shipped here:
+   ```bash
+   python /path/to/Token-Matrix/tools/export_vda_onnx.py \
+       --repo /path/to/Video-Depth-Anything \
+       --checkpoint checkpoints/video_depth_anything_vitl.pth \
+       --encoder vitl \
+       --output video_depth_anything_vitl.onnx
+   ```
+   Use `--metric` for the metric version of the model. The export preserves the
+   32-frame temporal window, matching the JavaScript pipeline.
+3. Serve this repository so that mobile Safari can load the Wasm assets:
+   ```bash
+   cd /path/to/Token-Matrix
+   python -m http.server 8000
+   ```
+4. Open `http://<host>:8000/index.html` on the target device, load the ONNX file,
+   select a video, and run inference. The UI exposes FPS, input-size, and metric-mode
+   toggles, and streams the resulting depth maps directly in the browser.
+
 ## 🧩 Core Ecosystem
 
 | Module | Purpose | Description |
