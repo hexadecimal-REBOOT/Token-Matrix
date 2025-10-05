@@ -1,125 +1,404 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Video-Depth-Anything ONNX Converter</title>
-    <link rel="stylesheet" href="static/styles.css" />
-  </head>
-  <body>
-    <header class="app-header">
-      <h1>Video-Depth-Anything Checkpoint Converter</h1>
-      <p>
-        Upload your Video-Depth-Anything checkpoints, inspect their contents, and
-        convert them to ONNX for browser/WebAssembly inference.
-      </p>
-    </header>
-
-    <main class="layout">
-      <section class="panel upload-panel">
-        <h2>1. Upload Checkpoint Files</h2>
-        <div id="dropzone" class="dropzone" role="button" tabindex="0">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M12 16a1 1 0 0 1-1-1V7.41L9.7 8.7a1 1 0 0 1-1.4-1.42l3-3a1 1 0 0 1 1.4 0l3 3a1 1 0 1 1-1.4 1.42L13 7.4V15a1 1 0 0 1-1 1Zm7-1a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3 1 1 0 1 1 2 0 1 1 0 0 0 1 1h8a1 1 0 0 0 1-1 1 1 0 0 1 2 0ZM6 20a1 1 0 1 1 0-2h12a1 1 0 0 1 0 2Z"
-            />
-          </svg>
-          <p>Drag &amp; drop folders or files here, or click to browse.</p>
-          <p class="hint">Entire checkpoint folders are supported.</p>
-          <input
-            id="fileInput"
-            type="file"
-            webkitdirectory
-            multiple
-            hidden
-            aria-label="Upload checkpoint files"
-          />
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+        <title>
+            Image/Video → Intrinsics, Depth, Point Cloud → VDSX (Multi-Frame)
+        </title>
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+        <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+        <style>
+            :root {
+                --bg: #0a0e1a;
+                --panel: #0d1321;
+                --ink: #e8f4f8;
+                --mut: #94a9c9;
+                --line: #1e2a44;
+                --accent: #00d4ff;
+                --ok: #1dd1a1;
+                --bad: #ff7675;
+            }
+            * {
+                box-sizing: border-box;
+                -webkit-tap-highlight-color: transparent;
+            }
+            body {
+                margin: 0;
+                font-family: system-ui, -apple-system, Segoe UI, Roboto,
+                    sans-serif;
+                background: var(--bg);
+                color: var(--ink);
+                touch-action: manipulation;
+            }
+            .wrap {
+                max-width: 1180px;
+                margin: 0 auto;
+                padding: 14px;
+            }
+            h1 {
+                font-size: 20px;
+                margin: 6px 0 2px;
+                background: linear-gradient(135deg, var(--accent), #74b9ff);
+                -webkit-background-clip: text;
+                background-clip: text;
+                -webkit-text-fill-color: transparent;
+            }
+            h2 {
+                font-size: 16px;
+                margin: 10px 0 8px;
+            }
+            .card {
+                background: var(--panel);
+                border: 1px solid var(--line);
+                border-radius: 12px;
+                padding: 12px;
+                margin: 12px 0;
+            }
+            .row {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+            .badge {
+                display: inline-block;
+                border: 1px solid var(--line);
+                padding: 4px 8px;
+                border-radius: 999px;
+                font-size: 11px;
+                color: var(--mut);
+            }
+            .badge.ok {
+                border-color: var(--ok);
+                color: var(--ok);
+            }
+            .badge.bad {
+                border-color: var(--bad);
+                color: var(--bad);
+            }
+            button,
+            select,
+            input[type='file'],
+            input[type='number'],
+            input[type='text'],
+            input[type='checkbox'] {
+                background: #0b1324;
+                border: 1px solid var(--line);
+                color: #fff;
+                border-radius: 8px;
+                padding: 8px 12px;
+                font-size: 12px;
+                cursor: pointer;
+            }
+            button.primary {
+                background: linear-gradient(135deg, #0a84ff, #007acc);
+                border-color: #0a84ff;
+            }
+            button:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+            @media (min-width: 960px) {
+                .grid {
+                    grid-template-columns: 1.1fr 0.9fr;
+                }
+            }
+            canvas,
+            video,
+            img {
+                max-width: 100%;
+                border-radius: 10px;
+                display: block;
+                box-shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+                background: #000;
+            }
+            .kv {
+                display: grid;
+                grid-template-columns: 160px 1fr;
+                gap: 6px;
+            }
+            pre {
+                font: 12px/1.5 ui-monospace, Consolas, monospace;
+                background: #06101e;
+                border: 1px solid var(--line);
+                border-radius: 10px;
+                padding: 10px;
+                white-space: pre-wrap;
+                max-height: 260px;
+                overflow: auto;
+            }
+            .drop {
+                display: grid;
+                place-items: center;
+                border: 1px dashed var(--line);
+                border-radius: 12px;
+                padding: 18px;
+                color: var(--mut);
+                cursor: pointer;
+            }
+            small {
+                color: var(--mut);
+            }
+            .loading {
+                display: none;
+                position: fixed;
+                inset: 0;
+                background: rgba(10, 14, 26, 0.8);
+                z-index: 1000;
+                justify-content: center;
+                align-items: center;
+                flex-direction: column;
+                color: var(--ink);
+            }
+            .loading-spinner {
+                width: 40px;
+                height: 40px;
+                border: 4px solid var(--line);
+                border-top: 4px solid var(--accent);
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin-bottom: 10px;
+            }
+            @keyframes spin {
+                0% {
+                    transform: rotate(0);
+                }
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+            .badgeRow {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin: 8px 0;
+            }
+            fieldset {
+                border: 1px solid var(--line);
+                border-radius: 10px;
+            }
+            legend {
+                color: var(--mut);
+                padding: 0 6px;
+            }
+            hr {
+                border: none;
+                border-top: 1px solid var(--line);
+                margin: 8px 0;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="loading" id="loading">
+            <div class="loading-spinner"></div>
+            <div>Processing…</div>
         </div>
-        <div class="actions">
-          <button id="clearFiles" type="button" class="secondary">Clear Files</button>
+        <div class="wrap">
+            <h1>
+                Image/Video → Intrinsics, Depth, Point Cloud → VDSX
+                (Multi-Frame)
+            </h1>
+            <div class="badgeRow">
+                <span id="s_depth" class="badge">DEPTH: —</span>
+                <span id="s_yolo" class="badge">YOLO: —</span>
+                <span id="s_fov" class="badge">FOV-NN: —</span>
+                <span id="s_intr" class="badge">INTR: —</span>
+                <span id="s_extr" class="badge">EXTR: —</span>
+                <span id="s_ep" class="badge">EP: —</span>
+                <span id="s_fps" class="badge">FPS: —</span>
+                <span id="s_rec" class="badge">REC: idle</span>
+            </div>
+
+            <div class="card">
+                <div class="row">
+                    <button id="loadDepth" class="primary">
+                        🧠 Load Depth ONNX
+                    </button>
+                    <input
+                        id="depthFile"
+                        type="file"
+                        accept=".onnx"
+                        style="display: none" />
+                    <button id="loadYolo" class="primary">
+                        🎯 Load YOLO ONNX (optional)
+                    </button>
+                    <input
+                        id="yoloFile"
+                        type="file"
+                        accept=".onnx"
+                        style="display: none" />
+                    <button id="loadFov" class="primary">
+                        📐 Load FOV ONNX (optional)
+                    </button>
+                    <input
+                        id="fovFile"
+                        type="file"
+                        accept=".onnx"
+                        style="display: none" />
+                    <select id="epSel">
+                        <option value="auto" selected>Auto EP</option>
+                        <option value="webgpu">WebGPU</option>
+                        <option value="wasm">WASM</option>
+                    </select>
+                    <button id="bench">⚙️ Benchmark</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <fieldset>
+                    <legend>Source</legend>
+                    <div class="row">
+                        <label
+                            ><input
+                                type="radio"
+                                name="src"
+                                value="image"
+                                checked />
+                            Image</label
+                        >
+                        <label
+                            ><input type="radio" name="src" value="video" />
+                            Camera (real-time)</label
+                        >
+                    </div>
+
+                    <div id="imageControls" class="row">
+                        <input
+                            id="imgFiles"
+                            type="file"
+                            accept="image/*"
+                            multiple />
+                        <div id="drop" class="drop">
+                            Drop images here or click to select
+                        </div>
+                    </div>
+
+                    <div id="videoControls" class="row" style="display: none">
+                        <button id="startCam" class="primary">
+                            🎥 Start Camera
+                        </button>
+                        <button id="stopCam">⏹️ Stop Camera</button>
+                        <label
+                            >Target FPS
+                            <input
+                                id="tgtFps"
+                                type="number"
+                                value="60"
+                                min="1"
+                                max="240"
+                                style="width: 72px"
+                        /></label>
+                        <label
+                            ><input id="perFrameIntr" type="checkbox" />
+                            Estimate intrinsics per frame</label
+                        >
+                        <label
+                            ><input id="drawYOLOChk" type="checkbox" checked />
+                            Draw YOLO</label
+                        >
+                        <label
+                            ><input id="drawDepthChk" type="checkbox" checked />
+                            Draw depth overlay</label
+                        >
+                        <label
+                            >Frame stride
+                            <input
+                                id="frameStride"
+                                type="number"
+                                value="1"
+                                min="1"
+                                max="16"
+                                style="width: 72px"
+                                title="Record 1 of every N processed frames"
+                        /></label>
+                    </div>
+                </fieldset>
+            </div>
+
+            <div class="card grid">
+                <div>
+                    <h2>Preview</h2>
+                    <video
+                        id="video"
+                        width="2"
+                        height="2"
+                        autoplay
+                        playsinline
+                        muted
+                        style="display: none"></video>
+                    <canvas id="view" width="2" height="2"></canvas>
+                    <div class="row">
+                        <label
+                            >Depth size
+                            <select id="depthSize">
+                                <option>256</option>
+                                <option selected>320</option>
+                                <option>384</option>
+                            </select>
+                        </label>
+                        <label
+                            >Scale (meters per unit)
+                            <input
+                                id="scaleMeters"
+                                type="number"
+                                step="0.01"
+                                value="1.00"
+                                style="width: 110px" />
+                        </label>
+                        <label
+                            >Up vector
+                            <select id="upSel">
+                                <option value="y" selected>+Y up</option>
+                                <option value="z">+Z up</option>
+                            </select>
+                        </label>
+                        <label
+                            >Retention Mode
+                            <select id="retentionMode">
+                                <option value="FULL" selected>
+                                    FULL (RGB + pointcloud)
+                                </option>
+                                <option value="REFERENTIAL">
+                                    REFERENTIAL (minimal)
+                                </option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="row">
+                        <button id="processOne" class="primary">
+                            ▶️ Process Selected (Image)
+                        </button>
+                        <button id="saveVDSX" disabled>
+                            💾 Save .vdsx (current frame)
+                        </button>
+                        <button id="startRec" disabled>
+                            ⏺️ Start Recording (VDSX)
+                        </button>
+                        <button id="stopRec" disabled>
+                            💾 Stop & Save Recording
+                        </button>
+                    </div>
+                </div>
+                <div>
+                    <h2>Results</h2>
+                    <div class="kv" id="kv"></div>
+                    <h2>Logs</h2>
+                    <pre id="log">
+Load a depth model, then drop an image or start the camera.</pre
+                    >
+                </div>
+            </div>
         </div>
-        <div id="fileSummary" class="file-summary" hidden></div>
-        <ul id="fileList" class="file-list" aria-live="polite"></ul>
-      </section>
 
-      <section class="panel options-panel">
-        <h2>2. Configure Export</h2>
-        <form id="configForm" class="config-form">
-          <div class="field-group">
-            <label for="encoder">Encoder Variant</label>
-            <select id="encoder" name="encoder">
-              <option value="vits">ViT-Small</option>
-              <option value="vitb">ViT-Base</option>
-              <option value="vitl" selected>ViT-Large</option>
-            </select>
-          </div>
-          <div class="field-row">
-            <label class="field-group">
-              <span>Input Height</span>
-              <input type="number" id="inputHeight" name="input_height" min="128" step="14" value="518" />
-            </label>
-            <label class="field-group">
-              <span>Input Width</span>
-              <input type="number" id="inputWidth" name="input_width" min="128" step="14" value="518" />
-            </label>
-          </div>
-          <div class="field-row">
-            <label class="field-group">
-              <span>Sequence Length</span>
-              <input type="number" id="sequenceLength" name="sequence_length" min="1" max="64" value="32" />
-            </label>
-            <label class="field-group">
-              <span>Batch Size</span>
-              <input type="number" id="batchSize" name="batch_size" min="1" max="4" value="1" />
-            </label>
-          </div>
-          <div class="field-group">
-            <label for="opset">ONNX Opset Version</label>
-            <input type="number" id="opset" name="opset" min="11" max="20" value="17" />
-          </div>
-          <div class="field-group checkbox">
-            <label>
-              <input type="checkbox" id="dynamicAxes" name="dynamic_axes" checked />
-              Enable dynamic axes for batch, time, height, and width.
-            </label>
-          </div>
-          <div class="field-group checkbox">
-            <label>
-              <input type="checkbox" id="metricMode" name="metric" />
-              Use metric variant checkpoint
-            </label>
-          </div>
-          <button id="convertButton" type="submit" class="primary">Convert to ONNX</button>
-        </form>
-
-        <div id="status" class="status" role="status" aria-live="polite"></div>
-        <div id="preview" class="preview" hidden>
-          <h3>File Preview</h3>
-          <pre id="previewContent"></pre>
-        </div>
-      </section>
-    </main>
-
-    <template id="fileRowTemplate">
-      <li class="file-item">
-        <div>
-          <span class="file-name"></span>
-          <span class="file-size"></span>
-        </div>
-        <div class="file-actions">
-          <button type="button" class="link-button preview-button">Preview</button>
-          <button type="button" class="link-button remove-button">Remove</button>
-        </div>
-      </li>
-    </template>
-
-    <footer class="app-footer">
-      <p>
-        Need help preparing your repository? Follow the instructions in the README to
-        clone Video-Depth-Anything and bundle your checkpoint files before uploading.
-      </p>
-    </footer>
-
-    <script type="module" src="static/app.js"></script>
-  </body>
+                <script type="module" src="static/js/app.js"></script>
+    </body>
 </html>
