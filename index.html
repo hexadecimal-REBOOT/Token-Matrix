@@ -1,886 +1,125 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Video Depth Anything — WebAssembly Runner</title>
-    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
-    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
-    <style>
-        :root {
-            color-scheme: dark;
-            --bg: #04070e;
-            --panel: #0c1324;
-            --line: #1a2b4a;
-            --ink: #f5fbff;
-            --muted: #9badc7;
-            --accent: #00d1ff;
-            --warn: #ffb86c;
-            --error: #ff6b6b;
-            --ok: #22e0a4;
-        }
-        * {
-            box-sizing: border-box;
-        }
-        body {
-            margin: 0;
-            font-family: "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            background: radial-gradient(circle at top right, rgba(0, 209, 255, 0.08), transparent 40%), var(--bg);
-            color: var(--ink);
-            min-height: 100vh;
-        }
-        a {
-            color: var(--accent);
-        }
-        .wrap {
-            max-width: 1100px;
-            margin: 0 auto;
-            padding: 18px 16px 64px;
-            display: grid;
-            gap: 18px;
-        }
-        header h1 {
-            margin: 0;
-            font-size: 26px;
-            letter-spacing: -0.01em;
-        }
-        header p {
-            margin: 8px 0 0;
-            max-width: 760px;
-            color: var(--muted);
-            line-height: 1.5;
-        }
-        section {
-            background: linear-gradient(165deg, rgba(12, 19, 36, 0.85), rgba(12, 19, 36, 0.6));
-            border: 1px solid rgba(26, 43, 74, 0.7);
-            border-radius: 14px;
-            padding: 16px;
-            backdrop-filter: blur(8px);
-        }
-        section h2 {
-            margin: 0 0 12px;
-            font-size: 18px;
-        }
-        .card-grid {
-            display: grid;
-            gap: 16px;
-        }
-        @media (min-width: 980px) {
-            .card-grid {
-                grid-template-columns: 1.05fr 0.95fr;
-            }
-        }
-        label {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            font-size: 13px;
-            color: var(--muted);
-        }
-        input[type="file"],
-        select,
-        input[type="number"],
-        button {
-            appearance: none;
-            border: 1px solid var(--line);
-            background: rgba(8, 15, 28, 0.9);
-            color: var(--ink);
-            border-radius: 10px;
-            padding: 9px 12px;
-            font-size: 13px;
-        }
-        input[type="file"] {
-            padding: 6px 0;
-        }
-        button {
-            cursor: pointer;
-            font-weight: 600;
-            letter-spacing: 0.01em;
-        }
-        button.primary {
-            background: linear-gradient(135deg, #00b0ff, #005eff);
-            border-color: transparent;
-            box-shadow: 0 12px 24px rgba(0, 94, 255, 0.25);
-        }
-        button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            box-shadow: none;
-        }
-        .row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-        }
-        .progress {
-            height: 8px;
-            border-radius: 999px;
-            background: rgba(255, 255, 255, 0.05);
-            overflow: hidden;
-        }
-        .progress > span {
-            display: block;
-            height: 100%;
-            width: 0;
-            background: linear-gradient(90deg, rgba(0, 209, 255, 0.85), rgba(0, 140, 255, 0.85));
-            transition: width 0.2s ease;
-        }
-        canvas {
-            width: 100%;
-            background: #050b16;
-            border-radius: 12px;
-            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
-        }
-        .preview-grid {
-            display: grid;
-            gap: 12px;
-        }
-        @media (min-width: 940px) {
-            .preview-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-        }
-        .meta {
-            display: grid;
-            gap: 4px;
-            font-size: 12px;
-            color: var(--muted);
-        }
-        pre#log {
-            margin: 0;
-            padding: 12px;
-            background: rgba(5, 11, 22, 0.9);
-            border-radius: 12px;
-            max-height: 240px;
-            overflow: auto;
-            font-size: 12px;
-            line-height: 1.55;
-        }
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            border-radius: 999px;
-            padding: 5px 10px;
-            font-size: 12px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            color: var(--muted);
-        }
-        .badge.ok {
-            color: var(--ok);
-            border-color: rgba(34, 224, 164, 0.35);
-        }
-        .badge.error {
-            color: var(--error);
-            border-color: rgba(255, 107, 107, 0.35);
-        }
-        .slider-row {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-        }
-        input[type="range"] {
-            flex: 1;
-        }
-        .small {
-            font-size: 12px;
-            color: var(--muted);
-        }
-    </style>
-</head>
-<body>
-    <main class="wrap">
-        <header>
-            <h1>Video Depth Anything — On-Device WebAssembly Runner</h1>
-            <p>
-                Load an ONNX export of the <strong>Video-Depth-Anything</strong> model and run fully local, streaming
-                inference in the browser. The runner targets Safari/iOS devices (including iPhone 13 Pro Max) via the
-                WebAssembly backend of <code>onnxruntime-web</code> — no GPU or server required.
-            </p>
-        </header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Video-Depth-Anything ONNX Converter</title>
+    <link rel="stylesheet" href="static/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>Video-Depth-Anything Checkpoint Converter</h1>
+      <p>
+        Upload your Video-Depth-Anything checkpoints, inspect their contents, and
+        convert them to ONNX for browser/WebAssembly inference.
+      </p>
+    </header>
 
-        <section class="card-grid">
-            <div>
-                <h2>1. Load model</h2>
-                <div class="row">
-                    <label style="flex: 1 1 220px">
-                        Depth Anything ONNX
-                        <input id="modelFile" type="file" accept=".onnx" />
-                    </label>
-                    <label>
-                        Execution provider
-                        <select id="ep">
-                            <option value="wasm" selected>WebAssembly</option>
-                            <option value="webgpu">WebGPU (beta)</option>
-                        </select>
-                    </label>
-                </div>
-                <div class="row" style="margin-top: 10px">
-                    <button id="loadModel" class="primary">Load model</button>
-                    <span id="modelStatus" class="badge">Model: idle</span>
-                </div>
-                <p class="small" style="margin-top: 12px">
-                    Export instructions are available below. The runner expects the streaming window length to remain 32 frames
-                    with 10 frame overlap, matching the official PyTorch pipeline.
-                </p>
-            </div>
-            <div>
-                <h2>2. Choose video</h2>
-                <div class="row">
-                    <label style="flex: 1 1 240px">
-                        Input video (mp4/mov)
-                        <input id="videoFile" type="file" accept="video/*" />
-                    </label>
-                    <label>
-                        Target FPS
-                        <input id="fps" type="number" min="1" max="120" value="30" />
-                    </label>
-                    <label>
-                        Max resolution
-                        <input id="maxRes" type="number" min="256" max="2048" value="960" />
-                    </label>
-                </div>
-                <div class="row" style="margin-top: 10px">
-                    <label>
-                        Model input size
-                        <input id="inputSize" type="number" min="252" max="770" value="518" step="14" />
-                    </label>
-                    <label>
-                        Metric depth
-                        <select id="metric">
-                            <option value="false" selected>No (relative depth)</option>
-                            <option value="true">Yes (metric)</option>
-                        </select>
-                    </label>
-                </div>
-                <div class="row" style="margin-top: 12px">
-                    <button id="decodeVideo">Decode frames</button>
-                    <button id="run" class="primary" disabled>Run inference</button>
-                    <span id="videoStatus" class="badge">Video: idle</span>
-                </div>
-            </div>
-        </section>
+    <main class="layout">
+      <section class="panel upload-panel">
+        <h2>1. Upload Checkpoint Files</h2>
+        <div id="dropzone" class="dropzone" role="button" tabindex="0">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M12 16a1 1 0 0 1-1-1V7.41L9.7 8.7a1 1 0 0 1-1.4-1.42l3-3a1 1 0 0 1 1.4 0l3 3a1 1 0 1 1-1.4 1.42L13 7.4V15a1 1 0 0 1-1 1Zm7-1a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3 1 1 0 1 1 2 0 1 1 0 0 0 1 1h8a1 1 0 0 0 1-1 1 1 0 0 1 2 0ZM6 20a1 1 0 1 1 0-2h12a1 1 0 0 1 0 2Z"
+            />
+          </svg>
+          <p>Drag &amp; drop folders or files here, or click to browse.</p>
+          <p class="hint">Entire checkpoint folders are supported.</p>
+          <input
+            id="fileInput"
+            type="file"
+            webkitdirectory
+            multiple
+            hidden
+            aria-label="Upload checkpoint files"
+          />
+        </div>
+        <div class="actions">
+          <button id="clearFiles" type="button" class="secondary">Clear Files</button>
+        </div>
+        <div id="fileSummary" class="file-summary" hidden></div>
+        <ul id="fileList" class="file-list" aria-live="polite"></ul>
+      </section>
 
-        <section>
-            <h2>3. Progress</h2>
-            <div class="meta">
-                <div>
-                    Frame decode
-                    <div class="progress"><span id="decodeBar"></span></div>
-                </div>
-                <div>
-                    Inference
-                    <div class="progress"><span id="inferBar"></span></div>
-                </div>
-                <div id="timing" class="small"></div>
-            </div>
-        </section>
+      <section class="panel options-panel">
+        <h2>2. Configure Export</h2>
+        <form id="configForm" class="config-form">
+          <div class="field-group">
+            <label for="encoder">Encoder Variant</label>
+            <select id="encoder" name="encoder">
+              <option value="vits">ViT-Small</option>
+              <option value="vitb">ViT-Base</option>
+              <option value="vitl" selected>ViT-Large</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <label class="field-group">
+              <span>Input Height</span>
+              <input type="number" id="inputHeight" name="input_height" min="128" step="14" value="518" />
+            </label>
+            <label class="field-group">
+              <span>Input Width</span>
+              <input type="number" id="inputWidth" name="input_width" min="128" step="14" value="518" />
+            </label>
+          </div>
+          <div class="field-row">
+            <label class="field-group">
+              <span>Sequence Length</span>
+              <input type="number" id="sequenceLength" name="sequence_length" min="1" max="64" value="32" />
+            </label>
+            <label class="field-group">
+              <span>Batch Size</span>
+              <input type="number" id="batchSize" name="batch_size" min="1" max="4" value="1" />
+            </label>
+          </div>
+          <div class="field-group">
+            <label for="opset">ONNX Opset Version</label>
+            <input type="number" id="opset" name="opset" min="11" max="20" value="17" />
+          </div>
+          <div class="field-group checkbox">
+            <label>
+              <input type="checkbox" id="dynamicAxes" name="dynamic_axes" checked />
+              Enable dynamic axes for batch, time, height, and width.
+            </label>
+          </div>
+          <div class="field-group checkbox">
+            <label>
+              <input type="checkbox" id="metricMode" name="metric" />
+              Use metric variant checkpoint
+            </label>
+          </div>
+          <button id="convertButton" type="submit" class="primary">Convert to ONNX</button>
+        </form>
 
-        <section>
-            <h2>4. Preview</h2>
-            <div class="preview-grid">
-                <div>
-                    <h3 style="margin: 0 0 10px; font-size: 16px">RGB</h3>
-                    <canvas id="rgbCanvas" width="2" height="2"></canvas>
-                </div>
-                <div>
-                    <h3 style="margin: 0 0 10px; font-size: 16px">Depth (colorized)</h3>
-                    <canvas id="depthCanvas" width="2" height="2"></canvas>
-                </div>
-            </div>
-            <div class="slider-row" style="margin-top: 14px">
-                <label style="width: 140px">Frame
-                    <input id="frameIndex" type="number" value="0" min="0" step="1" />
-                </label>
-                <input id="frameSlider" type="range" min="0" max="0" value="0" />
-                <button id="play">Play</button>
-            </div>
-        </section>
-
-        <section>
-            <h2>5. Logs</h2>
-            <pre id="log">Load an ONNX model, decode a video, then run inference.</pre>
-        </section>
-
-        <section>
-            <h2>Export guide</h2>
-            <ol style="margin: 0; padding-left: 18px; line-height: 1.6">
-                <li>Clone the official <a href="https://github.com/DepthAnything/Video-Depth-Anything" target="_blank" rel="noopener">Video-Depth-Anything</a> repository and install its dependencies.</li>
-                <li>Download the checkpoints via <code>bash get_weights.sh</code>.</li>
-                <li>
-                    Export an ONNX model using the helper script bundled in this repo:
-                    <pre style="margin-top: 10px">python tools/export_vda_onnx.py \
-  --repo /path/to/Video-Depth-Anything \
-  --checkpoint checkpoints/video_depth_anything_vitl.pth \
-  --encoder vitl \
-  --output video_depth_anything_vitl.onnx</pre>
-                </li>
-                <li>Serve this folder (e.g. <code>python -m http.server 8000</code>) and open <code>index.html</code> in Safari or Chrome. Loading from <code>file://</code> is blocked on iOS.</li>
-                <li>Use the controls above to run relative or metric depth locally. All computation stays on-device.</li>
-            </ol>
-        </section>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <div id="preview" class="preview" hidden>
+          <h3>File Preview</h3>
+          <pre id="previewContent"></pre>
+        </div>
+      </section>
     </main>
 
-    <script type="module">
-        const INFER_LEN = 32
-        const OVERLAP = 10
-        const KEYFRAMES = [0, 12, 24, 25, 26, 27, 28, 29, 30, 31]
-        const INTERP_LEN = 8
+    <template id="fileRowTemplate">
+      <li class="file-item">
+        <div>
+          <span class="file-name"></span>
+          <span class="file-size"></span>
+        </div>
+        <div class="file-actions">
+          <button type="button" class="link-button preview-button">Preview</button>
+          <button type="button" class="link-button remove-button">Remove</button>
+        </div>
+      </li>
+    </template>
 
-        const state = {
-            session: null,
-            inputName: null,
-            outputName: null,
-            rawFrames: [],
-            processedFrames: [],
-            depths: [],
-            playing: false,
-            playHandle: null,
-            decodeStart: 0,
-            inferStart: 0,
-            metric: false,
-            fps: 30
-        }
+    <footer class="app-footer">
+      <p>
+        Need help preparing your repository? Follow the instructions in the README to
+        clone Video-Depth-Anything and bundle your checkpoint files before uploading.
+      </p>
+    </footer>
 
-        const $ = (id) => document.getElementById(id)
-        const logEl = $('log')
-        const rgbCanvas = $('rgbCanvas')
-        const depthCanvas = $('depthCanvas')
-        const rgbCtx = rgbCanvas.getContext('2d')
-        const depthCtx = depthCanvas.getContext('2d', { willReadFrequently: true })
-
-        const canvasCache = new Map()
-        function acquireCanvas(key, w, h) {
-            let entry = canvasCache.get(key)
-            if (!entry) {
-                const canvas = document.createElement('canvas')
-                const ctx = canvas.getContext('2d', { willReadFrequently: true })
-                entry = { canvas, ctx }
-                canvasCache.set(key, entry)
-            }
-            if (entry.canvas.width !== w || entry.canvas.height !== h) {
-                entry.canvas.width = w
-                entry.canvas.height = h
-            } else {
-                entry.ctx.clearRect(0, 0, w, h)
-            }
-            return entry
-        }
-
-        function log(msg, level = 'info') {
-            const prefix = level === 'error' ? '❌' : level === 'warn' ? '⚠️' : level === 'ok' ? '✅' : 'ℹ️'
-            logEl.textContent += `\n${prefix} ${msg}`
-            logEl.scrollTop = logEl.scrollHeight
-        }
-
-        function updateBadge(el, text, status = 'idle') {
-            el.textContent = text
-            el.classList.remove('ok', 'error')
-            if (status === 'ok') el.classList.add('ok')
-            if (status === 'error') el.classList.add('error')
-        }
-
-        function setProgress(el, v) {
-            el.style.width = `${Math.max(0, Math.min(1, v)) * 100}%`
-        }
-
-        function constrainToMultiple(x, multiple, minVal, maxVal) {
-            let y = Math.round(x / multiple) * multiple
-            if (typeof maxVal === 'number' && y > maxVal) {
-                y = Math.floor(x / multiple) * multiple
-            }
-            if (typeof minVal === 'number' && y < minVal) {
-                y = Math.ceil(x / multiple) * multiple
-            }
-            return y
-        }
-
-        function computeResize(width, height, target, multiple = 14) {
-            const scaleH = target / height
-            const scaleW = target / width
-            const scale = Math.max(scaleH, scaleW)
-            const newH = constrainToMultiple(scale * height, multiple, target)
-            const newW = constrainToMultiple(scale * width, multiple, target)
-            return { width: newW, height: newH }
-        }
-
-        function preprocessFrame(imageData, srcW, srcH, transform) {
-            const { width: newW, height: newH } = transform
-            const src = acquireCanvas('src', srcW, srcH)
-            src.ctx.putImageData(imageData, 0, 0)
-            const dst = acquireCanvas('dst', newW, newH)
-            dst.ctx.drawImage(src.canvas, 0, 0, srcW, srcH, 0, 0, newW, newH)
-            const rgba = dst.ctx.getImageData(0, 0, newW, newH).data
-            const area = newW * newH
-            const mean = [0.485, 0.456, 0.406]
-            const std = [0.229, 0.224, 0.225]
-            const chw = new Float32Array(3 * area)
-            let p = 0
-            for (let i = 0; i < rgba.length; i += 4, p++) {
-                const r = rgba[i] / 255
-                const g = rgba[i + 1] / 255
-                const b = rgba[i + 2] / 255
-                chw[p] = (r - mean[0]) / std[0]
-                chw[p + area] = (g - mean[1]) / std[1]
-                chw[p + 2 * area] = (b - mean[2]) / std[2]
-            }
-            return { data: chw, width: newW, height: newH }
-        }
-
-        async function decodeVideo(file, targetFps, maxRes) {
-            const url = URL.createObjectURL(file)
-            const video = document.createElement('video')
-            video.src = url
-            video.muted = true
-            video.playsInline = true
-            video.preload = 'auto'
-
-            await new Promise((resolve, reject) => {
-                video.onloadedmetadata = () => resolve()
-                video.onerror = () => reject(new Error('Unable to decode video metadata'))
-            })
-
-            const baseW = video.videoWidth
-            const baseH = video.videoHeight
-            if (!baseW || !baseH) throw new Error('Video metadata missing dimensions')
-            const scale = Math.min(1, maxRes / Math.max(baseW, baseH))
-            const width = Math.max(1, Math.round(baseW * scale))
-            const height = Math.max(1, Math.round(baseH * scale))
-
-            const canvas = document.createElement('canvas')
-            canvas.width = width
-            canvas.height = height
-            const ctx = canvas.getContext('2d', { willReadFrequently: true })
-
-            const duration = isFinite(video.duration) ? video.duration : file.size / (1024 * 1024) // fallback
-            const fps = Math.max(1, targetFps)
-            const total = Math.max(1, Math.floor(duration * fps))
-            const frames = []
-
-            for (let i = 0; i < total; i++) {
-                const t = Math.min(duration - 1e-3, i / fps)
-                await new Promise((resolve) => {
-                    const onSeeked = () => {
-                        video.removeEventListener('seeked', onSeeked)
-                        resolve()
-                    }
-                    video.addEventListener('seeked', onSeeked)
-                    video.currentTime = t < 0 ? 0 : t
-                })
-                ctx.drawImage(video, 0, 0, width, height)
-                const imageData = ctx.getImageData(0, 0, width, height)
-                frames.push({ imageData, width, height })
-                setProgress($('decodeBar'), (i + 1) / total)
-                await new Promise((r) => requestAnimationFrame(r))
-            }
-
-            URL.revokeObjectURL(url)
-            return { frames, fps, width, height }
-        }
-
-        function padFrames(frames) {
-            const frameStep = INFER_LEN - OVERLAP
-            const originalLength = frames.length
-            const appendLen = ((frameStep - (originalLength % frameStep)) % frameStep) + (INFER_LEN - frameStep)
-            const padded = frames.slice()
-            const last = frames[frames.length - 1]
-            for (let i = 0; i < appendLen; i++) {
-                padded.push({
-                    imageData: new ImageData(new Uint8ClampedArray(last.imageData.data), last.width, last.height),
-                    width: last.width,
-                    height: last.height,
-                    processed: {
-                        data: last.processed.data.slice(),
-                        width: last.processed.width,
-                        height: last.processed.height
-                    }
-                })
-            }
-            return { padded, originalLength }
-        }
-
-        function prepareFrames(frames, inputSize) {
-            if (!frames.length) throw new Error('No frames decoded')
-            const first = frames[0]
-            const ratio = Math.max(first.height, first.width) / Math.min(first.height, first.width)
-            let effectiveSize = inputSize
-            if (ratio > 1.78) {
-                effectiveSize = Math.round((inputSize * 1.777) / ratio)
-                effectiveSize = Math.max(14, Math.round(effectiveSize / 14) * 14)
-            }
-            const resize = computeResize(first.width, first.height, effectiveSize, 14)
-
-            for (const frame of frames) {
-                frame.processed = preprocessFrame(frame.imageData, frame.width, frame.height, resize)
-            }
-            return { frames, resize }
-        }
-
-        function resizeBilinear(data, srcW, srcH, dstW, dstH) {
-            const out = new Float32Array(dstW * dstH)
-            const xRatio = srcW / dstW
-            const yRatio = srcH / dstH
-            for (let y = 0; y < dstH; y++) {
-                const sy = Math.max(0, Math.min(srcH - 1, (y + 0.5) * yRatio - 0.5))
-                const y0 = Math.floor(sy)
-                const y1 = Math.min(srcH - 1, y0 + 1)
-                const ly = sy - y0
-                for (let x = 0; x < dstW; x++) {
-                    const sx = Math.max(0, Math.min(srcW - 1, (x + 0.5) * xRatio - 0.5))
-                    const x0 = Math.floor(sx)
-                    const x1 = Math.min(srcW - 1, x0 + 1)
-                    const lx = sx - x0
-                    const i00 = data[y0 * srcW + x0]
-                    const i10 = data[y0 * srcW + x1]
-                    const i01 = data[y1 * srcW + x0]
-                    const i11 = data[y1 * srcW + x1]
-                    const top = i00 + (i10 - i00) * lx
-                    const bottom = i01 + (i11 - i01) * lx
-                    out[y * dstW + x] = top + (bottom - top) * ly
-                }
-            }
-            return out
-        }
-
-        function concatFloat32(list) {
-            const total = list.reduce((sum, arr) => sum + arr.length, 0)
-            const out = new Float32Array(total)
-            let offset = 0
-            for (const arr of list) {
-                out.set(arr, offset)
-                offset += arr.length
-            }
-            return out
-        }
-
-        function computeScaleAndShift(prediction, target) {
-            let a00 = 0, a01 = 0, a11 = 0
-            let b0 = 0, b1 = 0
-            for (let i = 0; i < prediction.length; i++) {
-                const p = prediction[i]
-                const t = target[i]
-                a00 += p * p
-                a01 += p
-                a11 += 1
-                b0 += p * t
-                b1 += t
-            }
-            const det = a00 * a11 - a01 * a01
-            if (Math.abs(det) < 1e-6) {
-                return [1, 0]
-            }
-            const scale = (a11 * b0 - a01 * b1) / det
-            const shift = (-a01 * b0 + a00 * b1) / det
-            return [scale, shift]
-        }
-
-        function applyScale(depth, scale, shift) {
-            const out = depth.slice()
-            for (let i = 0; i < out.length; i++) {
-                const v = out[i] * scale + shift
-                out[i] = v < 0 ? 0 : v
-            }
-            return out
-        }
-
-        function interpolateFrames(preList, postList) {
-            const n = preList.length
-            if (!n) return []
-            const step = n > 1 ? 1 / (n - 1) : 1
-            const res = []
-            for (let i = 0; i < n; i++) {
-                const w = i * step
-                const pre = preList[i]
-                const post = postList[i]
-                const out = new Float32Array(pre.length)
-                for (let j = 0; j < pre.length; j++) {
-                    out[j] = pre[j] * (1 - w) + post[j] * w
-                }
-                res.push(out)
-            }
-            return res
-        }
-
-        function alignDepths(depthList, metric) {
-            const depthAligned = []
-            const refAlign = []
-            const alignLen = OVERLAP - INTERP_LEN
-            const kfAlignList = KEYFRAMES.slice(0, alignLen)
-            for (let frameId = 0; frameId < depthList.length; frameId += INFER_LEN) {
-                if (!depthAligned.length) {
-                    depthAligned.push(...depthList.slice(0, INFER_LEN))
-                    for (const kf of kfAlignList) {
-                        refAlign.push(depthList[frameId + kf])
-                    }
-                } else {
-                    const currAlign = []
-                    for (let i = 0; i < kfAlignList.length; i++) {
-                        currAlign.push(depthList[frameId + i])
-                    }
-                    let scale = 1
-                    let shift = 0
-                    if (!metric) {
-                        const catCurr = concatFloat32(currAlign)
-                        const catRef = concatFloat32(refAlign)
-                        ;[scale, shift] = computeScaleAndShift(catCurr, catRef)
-                    }
-                    const preDepthList = depthAligned.slice(-INTERP_LEN)
-                    const postDepthList = depthList
-                        .slice(frameId + alignLen, frameId + OVERLAP)
-                        .map((arr) => applyScale(arr, scale, shift))
-                    const interpolated = interpolateFrames(preDepthList, postDepthList)
-                    for (let i = 0; i < INTERP_LEN; i++) {
-                        depthAligned[depthAligned.length - INTERP_LEN + i] = interpolated[i]
-                    }
-                    for (let i = OVERLAP; i < INFER_LEN; i++) {
-                        depthAligned.push(applyScale(depthList[frameId + i], scale, shift))
-                    }
-                    const newRef = [refAlign[0]]
-                    for (let i = 1; i < kfAlignList.length; i++) {
-                        newRef.push(applyScale(depthList[frameId + kfAlignList[i]], scale, shift))
-                    }
-                    refAlign.length = 0
-                    refAlign.push(...newRef)
-                }
-            }
-            return depthAligned
-        }
-
-        async function runInference(frames, metric, session, inputName, outputName) {
-            const { padded, originalLength } = padFrames(frames)
-            const area = frames[0].processed.width * frames[0].processed.height
-            const chunkTemplate = new Float32Array(INFER_LEN * 3 * area)
-            let previousInput = null
-            const depthRaw = []
-            const frameStep = INFER_LEN - OVERLAP
-
-            for (let start = 0; start < padded.length; start += frameStep) {
-                const chunk = padded.slice(start, start + INFER_LEN)
-                if (chunk.length < INFER_LEN) break
-                for (let t = 0; t < INFER_LEN; t++) {
-                    chunkTemplate.set(chunk[t].processed.data, t * 3 * area)
-                }
-                if (previousInput) {
-                    for (const idx of KEYFRAMES) {
-                        const src = previousInput.subarray(idx * 3 * area, (idx + 1) * 3 * area)
-                        chunkTemplate.set(src, idx * 3 * area)
-                    }
-                }
-                const tensor = new ort.Tensor('float32', chunkTemplate, [1, INFER_LEN, 3, frames[0].processed.height, frames[0].processed.width])
-                const outputMap = await session.run({ [inputName]: tensor })
-                const outputTensor = outputMap[outputName] || Object.values(outputMap)[0]
-                const outData = outputTensor.data instanceof Float32Array ? outputTensor.data : Float32Array.from(outputTensor.data)
-                const depthArea = frames[0].processed.width * frames[0].processed.height
-                for (let t = 0; t < INFER_LEN; t++) {
-                    const slice = outData.slice(t * depthArea, (t + 1) * depthArea)
-                    const up = resizeBilinear(
-                        slice,
-                        frames[0].processed.width,
-                        frames[0].processed.height,
-                        chunk[t].width,
-                        chunk[t].height
-                    )
-                    depthRaw.push(up)
-                }
-                previousInput = chunkTemplate.slice()
-                setProgress($('inferBar'), Math.min(1, (start + INFER_LEN) / padded.length))
-                await new Promise((r) => requestAnimationFrame(r))
-            }
-            const aligned = alignDepths(depthRaw, metric)
-            return aligned.slice(0, originalLength)
-        }
-
-        function computeDepthStats(depths) {
-            let min = Infinity
-            let max = -Infinity
-            for (const arr of depths) {
-                for (let i = 0; i < arr.length; i++) {
-                    const v = arr[i]
-                    if (v <= 0) continue
-                    if (v < min) min = v
-                    if (v > max) max = v
-                }
-            }
-            if (!isFinite(min) || !isFinite(max) || min === max) {
-                min = 0
-                max = 1
-            }
-            return { min, max }
-        }
-
-        function colorizeDepth(depth, width, height, min, max) {
-            const range = max - min || 1
-            const image = depthCtx.createImageData(width, height)
-            for (let i = 0; i < depth.length; i++) {
-                const v = (depth[i] - min) / range
-                const x = Math.max(0, Math.min(1, v))
-                const r = Math.round(255 * x)
-                const g = Math.round(255 * (1 - Math.abs(x - 0.5) * 2))
-                const b = Math.round(255 * (1 - x))
-                image.data[i * 4 + 0] = r
-                image.data[i * 4 + 1] = g
-                image.data[i * 4 + 2] = b
-                image.data[i * 4 + 3] = 255
-            }
-            return image
-        }
-
-        function renderFrame(idx) {
-            if (!state.rawFrames.length || !state.depths.length) return
-            const frame = state.rawFrames[idx]
-            const depth = state.depths[idx]
-            $('frameIndex').value = idx
-            $('frameSlider').value = idx
-            rgbCanvas.width = frame.width
-            rgbCanvas.height = frame.height
-            rgbCtx.putImageData(frame.imageData, 0, 0)
-            depthCanvas.width = frame.width
-            depthCanvas.height = frame.height
-            const { min, max } = computeDepthStats(state.depths)
-            const image = colorizeDepth(depth, frame.width, frame.height, min, max)
-            depthCtx.putImageData(image, 0, 0)
-        }
-
-        function stopPlayback() {
-            state.playing = false
-            if (state.playHandle) cancelAnimationFrame(state.playHandle)
-            $('play').textContent = 'Play'
-        }
-
-        $('loadModel').addEventListener('click', async () => {
-            const file = $('modelFile').files?.[0]
-            if (!file) {
-                log('Select an ONNX model first.', 'warn')
-                return
-            }
-            try {
-                updateBadge($('modelStatus'), 'Model: loading…')
-                log(`Loading model ${file.name}…`)
-                const buffer = await file.arrayBuffer()
-                const provider = $('ep').value
-                const executionProviders = provider === 'webgpu' && navigator.gpu ? ['webgpu', 'wasm'] : ['wasm']
-                if (provider === 'webgpu' && !navigator.gpu) {
-                    log('WebGPU is not available; falling back to WebAssembly.', 'warn')
-                }
-                ort.env.wasm.numThreads = 1
-                ort.env.wasm.simd = true
-                state.session = await ort.InferenceSession.create(buffer, {
-                    executionProviders,
-                    graphOptimizationLevel: 'all'
-                })
-                state.inputName = state.session.inputNames[0]
-                state.outputName = state.session.outputNames[0]
-                updateBadge($('modelStatus'), `Model: ${file.name}`, 'ok')
-                log('Model loaded.', 'ok')
-                $('run').disabled = !state.rawFrames.length
-            } catch (err) {
-                console.error(err)
-                updateBadge($('modelStatus'), 'Model: failed', 'error')
-                log(err.message || String(err), 'error')
-            }
-        })
-
-        $('decodeVideo').addEventListener('click', async () => {
-            const file = $('videoFile').files?.[0]
-            if (!file) {
-                log('Select a video file first.', 'warn')
-                return
-            }
-            try {
-                stopPlayback()
-                state.rawFrames = []
-                state.processedFrames = []
-                state.depths = []
-                setProgress($('decodeBar'), 0)
-                setProgress($('inferBar'), 0)
-                updateBadge($('videoStatus'), 'Video: decoding…')
-                log(`Decoding ${file.name}…`)
-                state.decodeStart = performance.now()
-                const targetFps = Number($('fps').value) || 30
-                const maxRes = Number($('maxRes').value) || 960
-                const { frames, fps } = await decodeVideo(file, targetFps, maxRes)
-                state.fps = fps
-                const prepared = prepareFrames(frames, Number($('inputSize').value) || 518)
-                state.rawFrames = prepared.frames.map((f) => ({ imageData: f.imageData, width: f.width, height: f.height }))
-                state.processedFrames = prepared.frames
-                updateBadge($('videoStatus'), `Video: ${frames.length} frames @ ${fps.toFixed(1)}fps`, 'ok')
-                log(`Decoded ${frames.length} frames.`, 'ok')
-                $('frameSlider').max = Math.max(0, frames.length - 1)
-                $('frameIndex').max = Math.max(0, frames.length - 1)
-                $('run').disabled = !state.session
-                const elapsed = (performance.now() - state.decodeStart) / 1000
-                $('timing').textContent = `Decode time: ${elapsed.toFixed(2)}s`
-                if (state.rawFrames.length) renderFrame(0)
-            } catch (err) {
-                console.error(err)
-                updateBadge($('videoStatus'), 'Video: failed', 'error')
-                log(err.message || String(err), 'error')
-            }
-        })
-
-        $('run').addEventListener('click', async () => {
-            if (!state.session) {
-                log('Load a model before running inference.', 'warn')
-                return
-            }
-            if (!state.processedFrames.length) {
-                log('Decode a video first.', 'warn')
-                return
-            }
-            try {
-                stopPlayback()
-                state.metric = $('metric').value === 'true'
-                updateBadge($('videoStatus'), 'Inference: running…')
-                state.inferStart = performance.now()
-                const depths = await runInference(state.processedFrames, state.metric, state.session, state.inputName, state.outputName)
-                state.depths = depths
-                const elapsed = (performance.now() - state.inferStart) / 1000
-                $('timing').textContent += ` | Inference: ${elapsed.toFixed(2)}s`
-                updateBadge($('videoStatus'), `Inference: ${depths.length} frames`, 'ok')
-                log('Inference complete.', 'ok')
-                renderFrame(0)
-            } catch (err) {
-                console.error(err)
-                updateBadge($('videoStatus'), 'Inference: failed', 'error')
-                log(err.message || String(err), 'error')
-            }
-        })
-
-        $('frameSlider').addEventListener('input', () => {
-            const idx = Number($('frameSlider').value)
-            renderFrame(idx)
-        })
-        $('frameIndex').addEventListener('change', () => {
-            let idx = Number($('frameIndex').value)
-            if (Number.isNaN(idx)) idx = 0
-            idx = Math.max(0, Math.min(idx, state.rawFrames.length - 1))
-            renderFrame(idx)
-        })
-
-        $('play').addEventListener('click', () => {
-            if (!state.depths.length) return
-            state.playing = !state.playing
-            if (!state.playing) {
-                stopPlayback()
-                return
-            }
-            $('play').textContent = 'Pause'
-            let lastTs = performance.now()
-            const frameInterval = 1000 / state.fps
-            const step = () => {
-                if (!state.playing) return
-                const idx = Number($('frameSlider').value)
-                const now = performance.now()
-                if (now - lastTs >= frameInterval) {
-                    const next = (idx + 1) % state.depths.length
-                    renderFrame(next)
-                    lastTs = now
-                }
-                state.playHandle = requestAnimationFrame(step)
-            }
-            state.playHandle = requestAnimationFrame(step)
-        })
-    </script>
-</body>
+    <script type="module" src="static/app.js"></script>
+  </body>
 </html>
