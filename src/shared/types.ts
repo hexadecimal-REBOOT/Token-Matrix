@@ -38,6 +38,13 @@ export type RuntimeOptions = {
   timeoutMs?: number
 }
 
+export type CostBreakdown = {
+  deterministic: number
+  bounded: number
+  unrestricted: number
+  total: number
+}
+
 export type RuntimeResult = {
   executionId: string
   source: DecisionSource
@@ -51,6 +58,7 @@ export type RuntimeResult = {
     level: DeterminismLevel
     reason?: string
   }
+  cost: CostBreakdown
 }
 
 export type ReplayContext = {
@@ -65,12 +73,14 @@ export type ExecutionRecord = {
   sessionId: string
   taskId?: string
   timestamp: number
+  durationMs?: number
   idempotencyKey: string
   determinism: {
     level: DeterminismLevel
     reason?: string
   }
   replayContext?: ReplayContext
+  cost: CostBreakdown
   input: {
     raw: string
     parsedIntent?: string
@@ -132,6 +142,13 @@ export type IdempotencyRecord = {
   prevented?: boolean
   preventedReason?: string
   executionId?: string
+}
+
+export type OperatorGapEvent = {
+  intent: string
+  domain: string
+  payloadShape: string[]
+  reason: 'no_operator_match'
 }
 
 export class RuntimeInvariantError extends Error {}

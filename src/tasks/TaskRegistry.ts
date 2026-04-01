@@ -1,7 +1,16 @@
 import { nextId } from '../shared/ids'
 import { TaskStateBase } from '../shared/types'
 
-export class TaskRegistry {
+
+export interface ITaskRegistry {
+  register(task: Omit<TaskStateBase, 'id' | 'createdAt' | 'notified'> & { notified?: boolean }): string
+  complete(taskId: string): void
+  fail(taskId: string, error?: string): void
+  kill(taskId: string): Promise<void>
+  get(taskId: string): TaskStateBase | undefined
+}
+
+export class TaskRegistry implements ITaskRegistry {
   private readonly tasks = new Map<string, TaskStateBase>()
 
   register(task: Omit<TaskStateBase, 'id' | 'createdAt' | 'notified'> & { notified?: boolean }): string {

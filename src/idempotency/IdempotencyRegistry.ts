@@ -2,7 +2,19 @@ import { IdempotencyPolicy } from '../policy/RuntimePolicy'
 import { IdempotencyRecord, IdempotencyStatus } from '../shared/types'
 import { KeyComputer } from './KeyComputer'
 
-export class IdempotencyRegistry {
+
+export interface IIdempotencyRegistry {
+  computeKey(input: { action: string; payload?: Record<string, unknown>; sessionId?: string; taskId?: string; scope?: 'session' | 'task' | 'global' }): string
+  check(key: string): { status: IdempotencyStatus; record?: IdempotencyRecord }
+  checkAndClaim(input: { key: string; action: string; scope: 'session' | 'task' | 'global'; executionId: string }): {
+    status: 'claimed' | 'in_flight' | 'completed' | 'failed'
+    record?: IdempotencyRecord
+  }
+  complete(key: string, result?: unknown, meta?: { prevented?: boolean; preventedReason?: string }): void
+  fail(key: string, error?: string): void
+}
+
+export class IdempotencyRegistry implements IIdempotencyRegistry {
   private readonly records = new Map<string, IdempotencyRecord>()
   private readonly keyComputer: KeyComputer
 

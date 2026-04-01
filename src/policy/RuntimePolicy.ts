@@ -33,6 +33,7 @@ export interface RuntimePolicy {
   runtimeVersion: string
   operatorVersion: string
   schemaVersion: string
+  strictMode: boolean
   validate(action: string, domain: string, source: DecisionSource): { allowed: boolean; reason?: string }
 }
 
@@ -63,5 +64,6 @@ export const defaultRuntimePolicy: RuntimePolicy = {
   runtimeVersion: '0.4.0',
   operatorVersion: '1',
   schemaVersion: '1',
+  strictMode: false,
   validate: (_action, _domain, _source) => ({ allowed: true }),
 }

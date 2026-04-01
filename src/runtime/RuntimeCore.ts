@@ -1,13 +1,15 @@
 import { MumpixDbAdapter } from '../db/MumpixDbAdapter'
 import { DNARuntime } from '../dna/DNARuntime'
-import { ExecutionRegistry } from '../execution/ExecutionRegistry'
-import { IdempotencyRegistry } from '../idempotency/IdempotencyRegistry'
+import { ExecutionRegistry, IExecutionRegistry } from '../execution/ExecutionRegistry'
+import { IIdempotencyRegistry, IdempotencyRegistry } from '../idempotency/IdempotencyRegistry'
+import { estimateCost, RuntimeMetrics } from '../metrics/RuntimeMetrics'
 import { RuntimePolicy } from '../policy/RuntimePolicy'
-import { TaskRegistry } from '../tasks/TaskRegistry'
+import { ITaskRegistry, TaskRegistry } from '../tasks/TaskRegistry'
 import { StepLimitError, TimeoutError, RuntimeInvariantError, RuntimeOptions, RuntimeResult } from '../shared/types'
 import { nextId } from '../shared/ids'
 import { ContextAssembler } from './ContextAssembler'
 import { DecisionRouter } from './DecisionRouter'
+import { IOperatorGapRegistry, OperatorGapRegistry } from './OperatorGapRegistry'
 import { SessionRuntime } from './SessionRuntime'
 
 export class RuntimeCore {
@@ -18,10 +20,12 @@ export class RuntimeCore {
   constructor(
     private readonly dna: DNARuntime,
     private readonly db: MumpixDbAdapter,
-    private readonly execution: ExecutionRegistry,
-    private readonly idempotency: IdempotencyRegistry,
-    private readonly tasks: TaskRegistry,
+    private readonly execution: IExecutionRegistry,
+    private readonly idempotency: IIdempotencyRegistry,
+    private readonly tasks: ITaskRegistry,
     private readonly policy: RuntimePolicy,
+    private readonly metrics: RuntimeMetrics = new RuntimeMetrics(),
+    private readonly operatorGaps: IOperatorGapRegistry = new OperatorGapRegistry(),
   ) {
     this.router = new DecisionRouter(dna, db)
     this.sessionRuntime = new SessionRuntime(dna)
@@ -34,11 +38,7 @@ export class RuntimeCore {
     let steps = 0
     let fallbackDepth = 0
     const trace = {
-      attempted: {
-        deterministic: false,
-        bounded: false,
-        unrestricted: false,
-      },
+      attempted: { deterministic: false, bounded: false, unrestricted: false },
     }
 
     const step = () => {
@@ -73,6 +73,9 @@ export class RuntimeCore {
       const bounded = this.router.nextBoundedFallback()
       const boundedResult = this.simulateTurboAssist(input, session.id)
       decision = boundedResult !== undefined ? bounded : undefined
+      if (!boundedResult) {
+        this.operatorGaps.emit({ intent: input, domain, payloadShape: Object.keys({ input, domain }), reason: 'no_operator_match' })
+      }
 
       if (!decision) {
         step()
@@ -85,13 +88,12 @@ export class RuntimeCore {
       }
     }
 
-    if (fallbackDepth > this.policy.maxFallbackDepth) {
-      throw new StepLimitError(`Fallback depth exceeded: ${fallbackDepth}`)
+    if (this.policy.strictMode && (decision.source === 'llm_freeform' || decision.source === 'llm_force_freeform')) {
+      throw new RuntimeInvariantError('Strict mode forbids unrestricted fallback')
     }
 
-    if (!trace.attempted.deterministic) {
-      throw new RuntimeInvariantError('Invariant 1 violation: deterministic tier not attempted')
-    }
+    if (fallbackDepth > this.policy.maxFallbackDepth) throw new StepLimitError(`Fallback depth exceeded: ${fallbackDepth}`)
+    if (!trace.attempted.deterministic) throw new RuntimeInvariantError('Invariant 1 violation: deterministic tier not attempted')
 
     const scope = opts.scope ?? this.policy.idempotency.getScopeForAction(decision.action)
     const key = this.idempotency.computeKey({
@@ -104,6 +106,7 @@ export class RuntimeCore {
 
     const claim = this.idempotency.checkAndClaim({ key, action: decision.action, scope, executionId })
     if (claim.status === 'completed' && claim.record) {
+      this.metrics.recordIdempotencyHit()
       return {
         executionId,
         source: decision.source,
@@ -112,10 +115,12 @@ export class RuntimeCore {
         prevented: claim.record.prevented,
         shortCircuited: true,
         determinism: this.toDeterminism(decision.source, decision.fallbackReason),
+        cost: estimateCost(decision.source),
       }
     }
 
     if (claim.status === 'in_flight') {
+      this.metrics.recordInFlightCollision()
       throw new RuntimeInvariantError(`Action already in flight for key ${key}`)
     }
 
@@ -125,21 +130,23 @@ export class RuntimeCore {
 
     const validation = this.policy.validate(decision.action, domain, decision.source)
     if (!validation.allowed) {
-      throw new RuntimeInvariantError(`Policy violation: ${validation.reason ?? 'action denied'}`)
+      throw new RuntimeInvariantError(`Policy violation: ${validation.reason ?? 'policy_denied'}`)
     }
 
     try {
       step()
       const result = this.executeDecision(input, decision, executionId)
+      const cost = estimateCost(result.source)
       this.idempotency.complete(key, result.output, {
         prevented: result.prevented,
         preventedReason: result.prevented ? `Prevented by ${decision.source}` : undefined,
       })
 
-      this.execution.append({
+      const record = {
         executionId,
         sessionId,
         taskId: opts.taskId,
+        durationMs: Date.now() - startedAt,
         idempotencyKey: key,
         determinism: result.determinism,
         replayContext: {
@@ -147,6 +154,7 @@ export class RuntimeCore {
           schemaVersion: this.policy.schemaVersion,
           runtimeVersion: this.policy.runtimeVersion,
         },
+        cost,
         input: { raw: input, domain },
         routing: {
           source: result.source,
@@ -173,9 +181,11 @@ export class RuntimeCore {
           shortCircuited: result.shortCircuited,
         },
         outcome: {},
-      })
+      }
+      const id = this.execution.append(record)
+      this.metrics.recordExecution({ ...record, id, timestamp: Date.now() })
 
-      return result
+      return { ...result, cost }
     } catch (error) {
       this.idempotency.fail(key, error instanceof Error ? error.message : 'unknown')
       throw error
@@ -184,6 +194,14 @@ export class RuntimeCore {
 
   getSession(sessionId: string) {
     return this.sessionRuntime.get(sessionId)
+  }
+
+  getMetrics() {
+    return this.metrics.snapshot()
+  }
+
+  getOperatorGaps() {
+    return this.operatorGaps.list()
   }
 
   async startBackgroundTask(type: string): Promise<string> {
@@ -215,7 +233,8 @@ export class RuntimeCore {
         action: decision.action,
         checkOutcome: 'prerequisite_required',
         output: { resolutionRequired: true },
-        determinism: this.toDeterminism(decision.source, 'prerequisite_missing'),
+        determinism: this.toDeterminism(decision.source, 'prerequisite_required'),
+        cost: estimateCost(decision.source),
       }
     }
 
@@ -227,6 +246,7 @@ export class RuntimeCore {
         checkOutcome: 'check_fail',
         prevented: true,
         determinism: this.toDeterminism(decision.source, 'check_failed'),
+        cost: estimateCost(decision.source),
       }
     }
 
@@ -238,6 +258,7 @@ export class RuntimeCore {
         output: this.db.resolve(input)?.execute(input),
         fallbackReason: decision.fallbackReason,
         determinism: this.toDeterminism(decision.source),
+        cost: estimateCost(decision.source),
       }
     }
 
@@ -249,6 +270,7 @@ export class RuntimeCore {
       checkOutcome: decision.checkOutcome,
       fallbackReason: decision.fallbackReason,
       determinism: this.toDeterminism(decision.source, decision.fallbackReason),
+      cost: estimateCost(decision.source),
     }
   }
 
@@ -279,5 +301,7 @@ export function createRuntimeCore(policy: RuntimePolicy) {
   const execution = new ExecutionRegistry()
   const idempotency = new IdempotencyRegistry(policy.idempotency)
   const tasks = new TaskRegistry()
-  return new RuntimeCore(dna, db, execution, idempotency, tasks, policy)
+  const metrics = new RuntimeMetrics()
+  const gaps = new OperatorGapRegistry()
+  return new RuntimeCore(dna, db, execution, idempotency, tasks, policy, metrics, gaps)
 }

@@ -10,7 +10,17 @@ export type CoverageStats = {
   forceFreeformRate: number
 }
 
-export class ExecutionRegistry {
+export interface IExecutionRegistry {
+  append(record: Omit<ExecutionRecord, 'id' | 'timestamp'>): string
+  get(id: string): ExecutionRecord | undefined
+  listBySource(source: DecisionSource): ExecutionRecord[]
+  listByCheckOutcome(outcome: CheckOutcome): ExecutionRecord[]
+  getCoverageStats(): CoverageStats
+  getReplayCandidates(action: string, opts?: { embeddingQuery?: string; expectedContext?: ReplayContext }): ReplayCandidate[]
+  explain(id: string): string
+}
+
+export class ExecutionRegistry implements IExecutionRegistry {
   private readonly records: ExecutionRecord[] = []
 
   append(record: Omit<ExecutionRecord, 'id' | 'timestamp'>): string {
@@ -91,6 +101,15 @@ export class ExecutionRegistry {
     }
 
     return result
+  }
+
+  explain(id: string): string {
+    const record = this.get(id)
+    if (!record) return `Execution ${id} not found`
+    if (record.determinism.level === 'deterministic') {
+      return `Used deterministic ${record.routing.source}${record.routing.operator ? ` operator ${record.routing.operator}` : ''}`
+    }
+    return `Fell back to ${record.routing.source} because ${record.routing.fallbackReason ?? 'fallback policy'}`
   }
 
   private contextMatches(recordCtx: ReplayContext | undefined, expected: ReplayContext): boolean {

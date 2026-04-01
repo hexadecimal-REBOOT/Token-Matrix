@@ -21,6 +21,13 @@ export type DreamTaskState = {
   finalVersion: number
 }
 
+export type DreamImpact = {
+  geneId: string
+  beforeDeterministicRate: number
+  afterDeterministicRate: number
+  executionsAffected: number
+}
+
 export type DreamTransaction = {
   readSnapshotVersion: number
   writeBatch: Array<{ geneId: string; domain?: string; operation: MutationOperation }>
@@ -30,6 +37,7 @@ export class DreamEngine {
   private readonly deferred = new Map<string, DeferralRecord>()
   private readonly operatorAlerts: string[] = []
   private stateVersion = 0
+  private readonly impacts: DreamImpact[] = []
 
   constructor(
     private readonly policy: RuntimePolicy,
@@ -119,6 +127,14 @@ export class DreamEngine {
 
   getStateVersion(): number {
     return this.stateVersion
+  }
+
+  recordImpact(impact: DreamImpact): void {
+    this.impacts.push(impact)
+  }
+
+  getImpacts(): DreamImpact[] {
+    return [...this.impacts]
   }
 
   private deferGene(geneId: string): DeferralRecord {

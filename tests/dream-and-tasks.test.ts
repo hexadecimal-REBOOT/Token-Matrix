@@ -50,3 +50,10 @@ test('task registry detects unfinished tasks', () => {
   tasks.register({ type: 'replay', title: 'Replay', status: 'running', notified: false })
   assert.throws(() => tasks.assertNoDanglingTasks(), /Spec violation/)
 })
+
+
+test('dream impact feedback loop is recorded', () => {
+  const dream = new DreamEngine(defaultRuntimePolicy, new TaskRegistry(), () => new Set())
+  dream.recordImpact({ geneId: 'g1', beforeDeterministicRate: 0.6, afterDeterministicRate: 0.72, executionsAffected: 40 })
+  assert.equal(dream.getImpacts()[0].afterDeterministicRate, 0.72)
+})
