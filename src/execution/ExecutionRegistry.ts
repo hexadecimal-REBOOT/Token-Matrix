@@ -18,6 +18,7 @@ export interface IExecutionRegistry {
   getCoverageStats(): CoverageStats
   getReplayCandidates(action: string, opts?: { embeddingQuery?: string; expectedContext?: ReplayContext }): ReplayCandidate[]
   explain(id: string): string
+  replayTimeline(id: string): Array<{ step: number; text: string }>
 }
 
 export class ExecutionRegistry implements IExecutionRegistry {
@@ -101,6 +102,19 @@ export class ExecutionRegistry implements IExecutionRegistry {
     }
 
     return result
+  }
+
+
+
+  replayTimeline(id: string): Array<{ step: number; text: string }> {
+    const r = this.get(id)
+    if (!r) return []
+    return [
+      { step: 1, text: `Input received in domain ${r.input.domain ?? 'unknown'}` },
+      { step: 2, text: `Routing source selected: ${r.routing.source}` },
+      { step: 3, text: `Action executed: ${r.action.name}` },
+      { step: 4, text: `Result: ${r.result.success ? 'success' : 'failure'}` },
+    ]
   }
 
   explain(id: string): string {

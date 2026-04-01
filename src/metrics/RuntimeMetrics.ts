@@ -1,5 +1,11 @@
 import { CostBreakdown, DecisionSource, ExecutionRecord } from '../shared/types'
 
+export type MetricEvent = {
+  type: 'execution_complete' | 'idempotency_hit' | 'in_flight_collision'
+  timestamp: number
+  payload: unknown
+}
+
 export type RuntimeMetricsSnapshot = {
   totalExecutions: number
   deterministicRate: number
@@ -23,17 +29,26 @@ export class RuntimeMetrics {
   private readonly executions: ExecutionRecord[] = []
   private idempotencyHits = 0
   private inFlightCollisions = 0
+  private readonly listeners = new Set<(event: MetricEvent) => void>()
+
+  subscribe(listener: (event: MetricEvent) => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
 
   recordExecution(record: ExecutionRecord): void {
     this.executions.push(record)
+    this.emit({ type: 'execution_complete', timestamp: Date.now(), payload: record })
   }
 
   recordIdempotencyHit(): void {
     this.idempotencyHits += 1
+    this.emit({ type: 'idempotency_hit', timestamp: Date.now(), payload: { hits: this.idempotencyHits } })
   }
 
   recordInFlightCollision(): void {
     this.inFlightCollisions += 1
+    this.emit({ type: 'in_flight_collision', timestamp: Date.now(), payload: { collisions: this.inFlightCollisions } })
   }
 
   snapshot(): RuntimeMetricsSnapshot {
@@ -72,6 +87,10 @@ export class RuntimeMetrics {
       },
       costs,
     }
+  }
+
+  private emit(event: MetricEvent): void {
+    for (const listener of this.listeners) listener(event)
   }
 
   private countBySource(): Record<'deterministic' | 'bounded' | 'unrestricted', number> {

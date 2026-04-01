@@ -6,7 +6,8 @@
   "scripts": {
     "check": "node -e \"console.log('runtime scaffold present')\"",
     "test": "tsx --test tests/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "loadtest": "tsx tools/load_test_runtime.ts 1000"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",

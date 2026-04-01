@@ -11,6 +11,7 @@ import { ContextAssembler } from './ContextAssembler'
 import { DecisionRouter } from './DecisionRouter'
 import { IOperatorGapRegistry, OperatorGapRegistry } from './OperatorGapRegistry'
 import { SessionRuntime } from './SessionRuntime'
+import { ICoordinationHook, InMemoryCoordinationHook } from './hooks/CoordinationHook'
 
 export class RuntimeCore {
   private readonly router: DecisionRouter
@@ -26,6 +27,7 @@ export class RuntimeCore {
     private readonly policy: RuntimePolicy,
     private readonly metrics: RuntimeMetrics = new RuntimeMetrics(),
     private readonly operatorGaps: IOperatorGapRegistry = new OperatorGapRegistry(),
+    private readonly coordination: ICoordinationHook = new InMemoryCoordinationHook(),
   ) {
     this.router = new DecisionRouter(dna, db)
     this.sessionRuntime = new SessionRuntime(dna)
@@ -184,6 +186,7 @@ export class RuntimeCore {
       }
       const id = this.execution.append(record)
       this.metrics.recordExecution({ ...record, id, timestamp: Date.now() })
+      this.coordination.publish({ type: 'execution_completed', executionId, recordId: id })
 
       return { ...result, cost }
     } catch (error) {
@@ -200,12 +203,18 @@ export class RuntimeCore {
     return this.metrics.snapshot()
   }
 
+  onMetricEvent(listener: Parameters<RuntimeMetrics['subscribe']>[0]) {
+    return this.metrics.subscribe(listener)
+  }
+
   getOperatorGaps() {
     return this.operatorGaps.list()
   }
 
   async startBackgroundTask(type: string): Promise<string> {
-    return this.tasks.register({ type, title: `${type} task`, status: 'running', startTime: Date.now() })
+    const taskId = this.tasks.register({ type, title: `${type} task`, status: 'running', startTime: Date.now() })
+    this.coordination.publish({ type: 'task_started', taskId })
+    return taskId
   }
 
   replay(action: string): Promise<{ action: string; replayed: boolean }> {
@@ -303,5 +312,6 @@ export function createRuntimeCore(policy: RuntimePolicy) {
   const tasks = new TaskRegistry()
   const metrics = new RuntimeMetrics()
   const gaps = new OperatorGapRegistry()
-  return new RuntimeCore(dna, db, execution, idempotency, tasks, policy, metrics, gaps)
+  const coordination = new InMemoryCoordinationHook()
+  return new RuntimeCore(dna, db, execution, idempotency, tasks, policy, metrics, gaps, coordination)
 }
