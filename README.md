@@ -94,3 +94,14 @@ This repository inherits the license terms defined in [LICENSE](LICENSE).
 ## 📘 Additional specification
 
 - `docs/mumpix-runtime-extensions-v0.4.md` — Mumpix Runtime Extensions formal specification (v0.4 pre-build final).
+
+## 🧠 Mumpix runtime scaffold
+
+This repository now includes an initial TypeScript runtime scaffold implementing the core Mumpix systems from the v0.4 specification:
+
+- `src/runtime/RuntimeCore.ts` — invariant-aware execution lifecycle and routing/fallback enforcement
+- `src/idempotency/*` — canonical payload normalization + idempotency key/record management
+- `src/execution/ExecutionRegistry.ts` — auditable execution record and coverage stats
+- `src/tasks/TaskRegistry.ts` — visible lifecycle for background tasks
+- `src/dream/DreamEngine.ts` — session-safe mutation deferral model
+
