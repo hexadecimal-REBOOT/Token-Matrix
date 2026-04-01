@@ -1,5 +1,4 @@
 import { RuntimePolicy } from '../policy/RuntimePolicy'
-import { nextId } from '../shared/ids'
 import { TaskRegistry } from '../tasks/TaskRegistry'
 
 type MutationOperation = 'promotion' | 'decay' | 'prune'
@@ -18,11 +17,19 @@ export type DreamTaskState = {
   genesStarving: string[]
   filesTouched: string[]
   alerts: string[]
+  snapshotVersion: number
+  finalVersion: number
+}
+
+export type DreamTransaction = {
+  readSnapshotVersion: number
+  writeBatch: Array<{ geneId: string; domain?: string; operation: MutationOperation }>
 }
 
 export class DreamEngine {
   private readonly deferred = new Map<string, DeferralRecord>()
   private readonly operatorAlerts: string[] = []
+  private stateVersion = 0
 
   constructor(
     private readonly policy: RuntimePolicy,
@@ -30,17 +37,35 @@ export class DreamEngine {
     private readonly getActiveGeneSet: () => Set<string>,
   ) {}
 
-  async start(): Promise<string> {
-    return this.taskRegistry.register({ type: 'dream', title: 'Dream cycle', status: 'running', startTime: Date.now() })
+  async start(executionId?: string): Promise<string> {
+    return this.taskRegistry.register({
+      type: 'dream',
+      title: 'Dream cycle',
+      status: 'running',
+      startTime: Date.now(),
+      executionId,
+    })
   }
 
-  async runMutationBatch(taskId: string, operations: Array<{ geneId: string; domain?: string; operation: MutationOperation }>): Promise<DreamTaskState> {
+  beginTransaction(writeBatch: DreamTransaction['writeBatch']): DreamTransaction {
+    return {
+      readSnapshotVersion: this.stateVersion,
+      writeBatch,
+    }
+  }
+
+  async commitTransaction(taskId: string, tx: DreamTransaction): Promise<DreamTaskState> {
+    if (tx.readSnapshotVersion !== this.stateVersion) {
+      throw new Error('Dream write isolation violation: state changed since snapshot')
+    }
+
     const touched: string[] = []
-    for (const op of operations) {
+    for (const op of tx.writeBatch) {
       const result = this.tryMutation(op)
       if (result.written) touched.push(op.geneId)
     }
 
+    this.stateVersion += 1
     this.taskRegistry.complete(taskId)
     return {
       id: taskId,
@@ -48,6 +73,8 @@ export class DreamEngine {
       genesStarving: this.getStarving().map((d) => d.geneId),
       filesTouched: touched,
       alerts: [...this.operatorAlerts],
+      snapshotVersion: tx.readSnapshotVersion,
+      finalVersion: this.stateVersion,
     }
   }
 
@@ -88,6 +115,10 @@ export class DreamEngine {
 
   getAlerts(): string[] {
     return [...this.operatorAlerts]
+  }
+
+  getStateVersion(): number {
+    return this.stateVersion
   }
 
   private deferGene(geneId: string): DeferralRecord {

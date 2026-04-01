@@ -27,6 +27,29 @@ export class IdempotencyRegistry {
     return { status: record.status, record }
   }
 
+  checkAndClaim(input: { key: string; action: string; scope: 'session' | 'task' | 'global'; executionId: string }): {
+    status: 'claimed' | 'in_flight' | 'completed' | 'failed'
+    record?: IdempotencyRecord
+  } {
+    const existing = this.records.get(input.key)
+    if (!existing) {
+      const claimed: IdempotencyRecord = {
+        key: input.key,
+        action: input.action,
+        scope: input.scope,
+        status: 'in_flight',
+        startedAt: Date.now(),
+        executionId: input.executionId,
+      }
+      this.records.set(input.key, claimed)
+      return { status: 'claimed', record: claimed }
+    }
+
+    if (existing.status === 'completed') return { status: 'completed', record: existing }
+    if (existing.status === 'failed') return { status: 'failed', record: existing }
+    return { status: 'in_flight', record: existing }
+  }
+
   start(key: string, action: string, scope: 'session' | 'task' | 'global'): void {
     const existing = this.records.get(key)
     if (existing?.status === 'in_flight') {

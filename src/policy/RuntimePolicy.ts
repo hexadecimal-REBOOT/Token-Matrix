@@ -1,3 +1,5 @@
+import { DecisionSource } from '../shared/types'
+
 export interface RoutingPolicy {
   allowForceFreeform(domain: string, callerSource: string): boolean
   requireStrictDeterminism(domain: string): boolean
@@ -25,6 +27,13 @@ export interface RuntimePolicy {
   routing: RoutingPolicy
   idempotency: IdempotencyPolicy
   dream: DreamPolicy
+  maxExecutionMs: number
+  maxSteps: number
+  maxFallbackDepth: number
+  runtimeVersion: string
+  operatorVersion: string
+  schemaVersion: string
+  validate(action: string, domain: string, source: DecisionSource): { allowed: boolean; reason?: string }
 }
 
 export const defaultRuntimePolicy: RuntimePolicy = {
@@ -48,4 +57,11 @@ export const defaultRuntimePolicy: RuntimePolicy = {
     allowedGeneDomains: undefined,
     maintenanceWindowActive: () => false,
   },
+  maxExecutionMs: 5_000,
+  maxSteps: 8,
+  maxFallbackDepth: 2,
+  runtimeVersion: '0.4.0',
+  operatorVersion: '1',
+  schemaVersion: '1',
+  validate: (_action, _domain, _source) => ({ allowed: true }),
 }

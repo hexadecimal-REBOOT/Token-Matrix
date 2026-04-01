@@ -1,5 +1,5 @@
 import { nextId } from '../shared/ids'
-import { CheckOutcome, DecisionSource, ExecutionRecord, ReplayCandidate } from '../shared/types'
+import { CheckOutcome, DecisionSource, ExecutionRecord, ReplayCandidate, ReplayContext } from '../shared/types'
 
 export type CoverageStats = {
   total: number
@@ -65,7 +65,10 @@ export class ExecutionRegistry {
     }
   }
 
-  getReplayCandidates(action: string, opts?: { embeddingQuery?: string }): ReplayCandidate[] {
+  getReplayCandidates(
+    action: string,
+    opts?: { embeddingQuery?: string; expectedContext?: ReplayContext },
+  ): ReplayCandidate[] {
     if (opts?.embeddingQuery) {
       throw new Error('Embedding lookup is forbidden in deterministic replay path')
     }
@@ -73,15 +76,29 @@ export class ExecutionRegistry {
     const result: ReplayCandidate[] = []
     for (const record of this.records) {
       if (record.action.name !== action) continue
+      if (opts?.expectedContext && !this.contextMatches(record.replayContext, opts.expectedContext)) {
+        continue
+      }
+
       result.push({
         recordId: record.id,
         actionSequence: [record.action.name],
         operatorSequence: record.routing.operator ? [record.routing.operator] : [],
         signature: `${record.input.domain ?? 'unknown'}:${record.outcome.trigger ?? 'none'}:${record.result.success ? 'success' : 'fail'}`,
         walPatternClass: record.outcome.walPatternClass,
+        replayContext: record.replayContext,
       })
     }
 
     return result
+  }
+
+  private contextMatches(recordCtx: ReplayContext | undefined, expected: ReplayContext): boolean {
+    if (!recordCtx) return false
+    return (
+      recordCtx.operatorVersion === expected.operatorVersion &&
+      recordCtx.schemaVersion === expected.schemaVersion &&
+      recordCtx.runtimeVersion === expected.runtimeVersion
+    )
   }
 }

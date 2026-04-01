@@ -10,6 +10,7 @@ export type TaskStateBase = {
   endTime?: number
   notified: boolean
   error?: string
+  executionId?: string
 }
 
 export type DecisionSource =
@@ -22,6 +23,7 @@ export type DecisionSource =
   | 'llm_force_freeform'
   | 'replay'
 
+export type DeterminismLevel = 'deterministic' | 'bounded' | 'unrestricted'
 export type CheckOutcome = 'check_pass' | 'check_fail' | 'prerequisite_required'
 
 export type RuntimeOptions = {
@@ -33,9 +35,11 @@ export type RuntimeOptions = {
   taskId?: string
   scope?: 'session' | 'task' | 'global'
   domain?: string
+  timeoutMs?: number
 }
 
 export type RuntimeResult = {
+  executionId: string
   source: DecisionSource
   action: string
   output?: unknown
@@ -43,14 +47,30 @@ export type RuntimeResult = {
   checkOutcome?: CheckOutcome
   shortCircuited?: boolean
   fallbackReason?: string
+  determinism: {
+    level: DeterminismLevel
+    reason?: string
+  }
+}
+
+export type ReplayContext = {
+  operatorVersion: string
+  schemaVersion: string
+  runtimeVersion: string
 }
 
 export type ExecutionRecord = {
   id: string
+  executionId: string
   sessionId: string
   taskId?: string
   timestamp: number
   idempotencyKey: string
+  determinism: {
+    level: DeterminismLevel
+    reason?: string
+  }
+  replayContext?: ReplayContext
   input: {
     raw: string
     parsedIntent?: string
@@ -95,9 +115,10 @@ export type ReplayCandidate = {
   operatorSequence: string[]
   signature: string
   walPatternClass?: string
+  replayContext?: ReplayContext
 }
 
-export type IdempotencyStatus = 'not_seen' | 'in_flight' | 'completed' | 'failed'
+export type IdempotencyStatus = 'not_seen' | 'claimed' | 'in_flight' | 'completed' | 'failed'
 
 export type IdempotencyRecord = {
   key: string
@@ -110,6 +131,9 @@ export type IdempotencyRecord = {
   error?: string
   prevented?: boolean
   preventedReason?: string
+  executionId?: string
 }
 
 export class RuntimeInvariantError extends Error {}
+export class TimeoutError extends Error {}
+export class StepLimitError extends Error {}

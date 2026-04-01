@@ -9,7 +9,8 @@ import { defaultRuntimePolicy } from '../src/policy/RuntimePolicy.ts'
 import { RuntimeCore } from '../src/runtime/RuntimeCore.ts'
 import { TaskRegistry } from '../src/tasks/TaskRegistry.ts'
 
-function buildRuntime() {
+function buildRuntime(policyOverride?: Partial<typeof defaultRuntimePolicy>) {
+  const policy = { ...defaultRuntimePolicy, ...policyOverride }
   const dna = new DNARuntime([
     { id: 'check-1', stage: 'check', trigger: /deploy/, confidence: 0.99, action: 'precheck', checkOutcome: 'check_fail' },
   ])
@@ -20,9 +21,9 @@ function buildRuntime() {
     dna,
     db,
     new ExecutionRegistry(),
-    new IdempotencyRegistry(defaultRuntimePolicy.idempotency),
+    new IdempotencyRegistry(policy.idempotency),
     new TaskRegistry(),
-    defaultRuntimePolicy,
+    policy,
   )
 }
 
@@ -39,6 +40,7 @@ test('DB operator is not skipped when computable', async () => {
   const out = await runtime.handleInput('db query')
   assert.equal(out.source, 'db_execute')
   assert.deepEqual(out.output, { ok: true })
+  assert.equal(out.determinism.level, 'deterministic')
 })
 
 test('force_freeform rejects missing required fields', async () => {
@@ -46,15 +48,16 @@ test('force_freeform rejects missing required fields', async () => {
   await assert.rejects(() => runtime.handleInput('unknown', { force_freeform: true }), /force_freeform requires/)
 })
 
-
 test('bounded fallback is evaluated before unrestricted fallback', async () => {
   const runtime = buildRuntime()
   const bounded = await runtime.handleInput('unknown path')
   assert.equal(bounded.source, 'turbo_assist')
+  assert.equal(bounded.determinism.level, 'bounded')
 
   const longInput = 'x'.repeat(5000)
   const unrestricted = await runtime.handleInput(longInput)
   assert.equal(unrestricted.source, 'llm_freeform')
+  assert.equal(unrestricted.determinism.level, 'unrestricted')
 })
 
 test('force_freeform is tracked as separate source', async () => {
@@ -75,4 +78,16 @@ test('prevented action short-circuits subsequent execution in scope', async () =
   assert.equal(first.prevented, true)
   assert.equal(second.shortCircuited, true)
   assert.equal(second.prevented, true)
+})
+
+test('policy denial blocks execution', async () => {
+  const runtime = buildRuntime({
+    validate: () => ({ allowed: false, reason: 'policy_denied' }),
+  })
+  await assert.rejects(() => runtime.handleInput('db query'), /Policy violation/)
+})
+
+test('timeout budget aborts execution', async () => {
+  const runtime = buildRuntime({ maxExecutionMs: -1 })
+  await assert.rejects(() => runtime.handleInput('db query'), /timed out/i)
 })
