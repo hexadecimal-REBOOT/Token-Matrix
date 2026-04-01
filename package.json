@@ -1,0 +1,17 @@
+{
+  "name": "token-matrix-runtime",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node -e \"console.log('runtime scaffold present')\"",
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "loadtest": "tsx tools/load_test_runtime.ts 1000"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}
