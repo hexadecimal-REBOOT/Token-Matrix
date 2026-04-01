@@ -4,14 +4,13 @@ import { TaskStateBase } from '../shared/types'
 export class TaskRegistry {
   private readonly tasks = new Map<string, TaskStateBase>()
 
-  register(task: Omit<TaskStateBase, 'id' | 'createdAt' | 'status'> & Partial<Pick<TaskStateBase, 'status'>>): string {
+  register(task: Omit<TaskStateBase, 'id' | 'createdAt' | 'notified'> & { notified?: boolean }): string {
     const id = nextId('task')
     this.tasks.set(id, {
       ...task,
       id,
-      status: task.status ?? 'pending',
       createdAt: Date.now(),
-      notified: false,
+      notified: task.notified ?? false,
     })
     return id
   }
@@ -26,8 +25,8 @@ export class TaskRegistry {
     this.update(taskId, (task) => ({ ...task, status: 'completed', endTime: Date.now() }))
   }
 
-  fail(taskId: string, _error?: string): void {
-    this.update(taskId, (task) => ({ ...task, status: 'failed', endTime: Date.now() }))
+  fail(taskId: string, error?: string): void {
+    this.update(taskId, (task) => ({ ...task, status: 'failed', error, endTime: Date.now() }))
   }
 
   async kill(taskId: string): Promise<void> {
@@ -40,5 +39,12 @@ export class TaskRegistry {
 
   get(taskId: string): TaskStateBase | undefined {
     return this.tasks.get(taskId)
+  }
+
+  assertNoDanglingTasks(): void {
+    const dangling = this.list().filter((t) => t.status !== 'completed' && t.status !== 'failed' && t.status !== 'killed')
+    if (dangling.length > 0) {
+      throw new Error(`Spec violation: ${dangling.length} task(s) not in terminal state`)
+    }
   }
 }

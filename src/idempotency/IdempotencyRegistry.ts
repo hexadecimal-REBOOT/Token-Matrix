@@ -1,14 +1,13 @@
 import { IdempotencyPolicy } from '../policy/RuntimePolicy'
 import { IdempotencyRecord, IdempotencyStatus } from '../shared/types'
-import { computeIdempotencyKey } from './KeyComputer'
-import { PayloadNormalizer } from './PayloadNormalizer'
+import { KeyComputer } from './KeyComputer'
 
 export class IdempotencyRegistry {
   private readonly records = new Map<string, IdempotencyRecord>()
-  private readonly normalizer: PayloadNormalizer
+  private readonly keyComputer: KeyComputer
 
   constructor(private readonly policy: IdempotencyPolicy) {
-    this.normalizer = new PayloadNormalizer(policy)
+    this.keyComputer = new KeyComputer(policy)
   }
 
   computeKey(input: {
@@ -19,8 +18,7 @@ export class IdempotencyRegistry {
     scope?: 'session' | 'task' | 'global'
   }): string {
     const scope = input.scope ?? this.policy.getScopeForAction(input.action)
-    const canonicalPayload = this.normalizer.normalize(input.payload)
-    return computeIdempotencyKey({ action: input.action, scope, canonicalPayload })
+    return this.keyComputer.compute({ action: input.action, scope, payload: input.payload })
   }
 
   check(key: string): { status: IdempotencyStatus; record?: IdempotencyRecord } {
@@ -29,7 +27,11 @@ export class IdempotencyRegistry {
     return { status: record.status, record }
   }
 
-  start(key: string, action = 'unknown', scope: 'session' | 'task' | 'global' = 'session'): void {
+  start(key: string, action: string, scope: 'session' | 'task' | 'global'): void {
+    const existing = this.records.get(key)
+    if (existing?.status === 'in_flight') {
+      throw new Error(`Action already in flight for ${key}`)
+    }
     this.records.set(key, {
       key,
       action,

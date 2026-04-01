@@ -1,5 +1,5 @@
 import { nextId } from '../shared/ids'
-import { CheckOutcome, DecisionSource, ExecutionRecord } from '../shared/types'
+import { CheckOutcome, DecisionSource, ExecutionRecord, ReplayCandidate } from '../shared/types'
 
 export type CoverageStats = {
   total: number
@@ -7,6 +7,7 @@ export type CoverageStats = {
   checkOutcomes: Record<string, number>
   boundedFallbackRate: number
   unrestrictedFallbackRate: number
+  forceFreeformRate: number
 }
 
 export class ExecutionRegistry {
@@ -51,14 +52,36 @@ export class ExecutionRegistry {
     }
 
     const bounded = bySource.turbo_assist ?? 0
-    const unrestricted = (bySource.llm_freeform ?? 0) + (bySource.llm_force_freeform ?? 0)
+    const freeform = bySource.llm_freeform ?? 0
+    const forceFreeform = bySource.llm_force_freeform ?? 0
 
     return {
       total,
       bySource,
       checkOutcomes,
       boundedFallbackRate: total ? bounded / total : 0,
-      unrestrictedFallbackRate: total ? unrestricted / total : 0,
+      unrestrictedFallbackRate: total ? (freeform + forceFreeform) / total : 0,
+      forceFreeformRate: total ? forceFreeform / total : 0,
     }
+  }
+
+  getReplayCandidates(action: string, opts?: { embeddingQuery?: string }): ReplayCandidate[] {
+    if (opts?.embeddingQuery) {
+      throw new Error('Embedding lookup is forbidden in deterministic replay path')
+    }
+
+    const result: ReplayCandidate[] = []
+    for (const record of this.records) {
+      if (record.action.name !== action) continue
+      result.push({
+        recordId: record.id,
+        actionSequence: [record.action.name],
+        operatorSequence: record.routing.operator ? [record.routing.operator] : [],
+        signature: `${record.input.domain ?? 'unknown'}:${record.outcome.trigger ?? 'none'}:${record.result.success ? 'success' : 'fail'}`,
+        walPatternClass: record.outcome.walPatternClass,
+      })
+    }
+
+    return result
   }
 }

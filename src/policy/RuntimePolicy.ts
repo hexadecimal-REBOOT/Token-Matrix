@@ -9,6 +9,7 @@ export interface IdempotencyPolicy {
   getScopeForAction(action: string): 'session' | 'task' | 'global'
   isReExecutable(action: string): boolean
   allowSpecialNumeric(fieldPath: string): boolean
+  canRetryFailed(action: string, scope: 'session' | 'task' | 'global'): boolean
 }
 
 export interface DreamPolicy {
@@ -28,21 +29,23 @@ export interface RuntimePolicy {
 
 export const defaultRuntimePolicy: RuntimePolicy = {
   routing: {
-    allowForceFreeform: () => false,
+    allowForceFreeform: (domain: string, callerSource: string) => Boolean(domain && callerSource && domain !== 'payments'),
     requireStrictDeterminism: () => true,
   },
   idempotency: {
     semanticTimestampFields: ['scheduled_for', 'effective_date'],
     transientFields: ['request_id', 'trace_id', 'correlation_id', 'client_timestamp'],
-    getScopeForAction: () => 'session',
-    isReExecutable: () => false,
+    getScopeForAction: (action: string) => (action.startsWith('fleet_') ? 'global' : 'session'),
+    isReExecutable: (action: string) => action.endsWith('_read'),
     allowSpecialNumeric: () => false,
+    canRetryFailed: (_action, _scope) => true,
   },
   dream: {
     maxDeferralCount: 8,
     maintenanceWindowFallback: false,
     starvingGeneAlertThreshold: 5,
     allowedMutationOperations: ['promotion', 'decay', 'prune'],
+    allowedGeneDomains: undefined,
     maintenanceWindowActive: () => false,
   },
 }

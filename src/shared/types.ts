@@ -9,6 +9,7 @@ export type TaskStateBase = {
   startTime?: number
   endTime?: number
   notified: boolean
+  error?: string
 }
 
 export type DecisionSource =
@@ -31,6 +32,7 @@ export type RuntimeOptions = {
   sessionId?: string
   taskId?: string
   scope?: 'session' | 'task' | 'global'
+  domain?: string
 }
 
 export type RuntimeResult = {
@@ -40,6 +42,7 @@ export type RuntimeResult = {
   prevented?: boolean
   checkOutcome?: CheckOutcome
   shortCircuited?: boolean
+  fallbackReason?: string
 }
 
 export type ExecutionRecord = {
@@ -81,7 +84,17 @@ export type ExecutionRecord = {
     reward?: number
     damage?: number
     tags?: string[]
+    trigger?: string
+    walPatternClass?: string
   }
+}
+
+export type ReplayCandidate = {
+  recordId: string
+  actionSequence: string[]
+  operatorSequence: string[]
+  signature: string
+  walPatternClass?: string
 }
 
 export type IdempotencyStatus = 'not_seen' | 'in_flight' | 'completed' | 'failed'

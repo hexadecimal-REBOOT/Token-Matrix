@@ -4,7 +4,6 @@ import { ExecutionRegistry } from '../execution/ExecutionRegistry'
 import { IdempotencyRegistry } from '../idempotency/IdempotencyRegistry'
 import { RuntimePolicy } from '../policy/RuntimePolicy'
 import { TaskRegistry } from '../tasks/TaskRegistry'
-import { nextId } from '../shared/ids'
 import { RuntimeInvariantError, RuntimeOptions, RuntimeResult } from '../shared/types'
 import { ContextAssembler } from './ContextAssembler'
 import { DecisionRouter } from './DecisionRouter'
@@ -29,82 +28,91 @@ export class RuntimeCore {
 
   async handleInput(input: string, opts: RuntimeOptions = {}): Promise<RuntimeResult> {
     const sessionId = opts.sessionId ?? 'default'
+    const domain = opts.domain ?? 'general'
     const session = this.sessionRuntime.getOrCreate(sessionId)
     this.sessionRuntime.pushHistory(sessionId, input)
 
     const forceDeclared = Boolean(opts.force_freeform)
-    if (forceDeclared) this.validateForceFreeform(opts, 'general')
+    if (forceDeclared) this.validateForceFreeform(opts, domain)
 
-    let decision
-    try {
-      decision = this.router.route(input)
-    } catch {
-      decision = this.resolveFallback(input, session.id, opts)
-    }
+    const deterministic = this.router.nextDeterministic(input)
+    const decision = deterministic ?? this.pickFallbackRoute(input, session.id, forceDeclared)
+
 
     const scope = opts.scope ?? this.policy.idempotency.getScopeForAction(decision.action)
-    const payload = { input, source: decision.source }
-    const key = this.idempotency.computeKey({ action: decision.action, payload, scope, sessionId: session.id, taskId: opts.taskId })
-    const state = this.idempotency.check(key)
+    const key = this.idempotency.computeKey({
+      action: decision.action,
+      payload: { input, source: decision.source, domain },
+      scope,
+      sessionId,
+      taskId: opts.taskId,
+    })
 
-    if (state.status === 'completed' && state.record) {
+    const idempotencyState = this.idempotency.check(key)
+    if (idempotencyState.status === 'completed' && idempotencyState.record) {
       return {
         source: decision.source,
         action: decision.action,
-        output: state.record.result,
-        prevented: state.record.prevented,
+        output: idempotencyState.record.result,
+        prevented: idempotencyState.record.prevented,
         shortCircuited: true,
       }
     }
 
-    if (state.status === 'in_flight') {
+    if (idempotencyState.status === 'in_flight') {
       throw new RuntimeInvariantError(`Action already in flight for key ${key}`)
+    }
+
+    if (idempotencyState.status === 'failed' && !this.policy.idempotency.canRetryFailed(decision.action, scope)) {
+      throw new RuntimeInvariantError(`Retry denied by policy for failed action ${decision.action}`)
     }
 
     this.idempotency.start(key, decision.action, scope)
 
-    const result: RuntimeResult = {
-      source: decision.source,
-      action: decision.action,
-      prevented: Boolean(decision.prevented),
-      checkOutcome: decision.checkOutcome,
-      output: decision.source === 'db_execute' && decision.operator ? this.db.resolve(input)?.execute(input) : undefined,
-    }
-
-    this.idempotency.complete(key, result.output, { prevented: result.prevented })
-
-    this.execution.append({
-      sessionId,
-      taskId: opts.taskId,
-      idempotencyKey: key,
-      input: { raw: input },
-      routing: {
-        source: result.source,
-        matchedGeneId: decision.matchedGeneId,
-        checkOutcome: result.checkOutcome,
-        operator: decision.operator,
-        forceFreeform: forceDeclared
-          ? {
-              reason: opts.forceFreeformReason!,
-              callerSource: opts.callerSource!,
-              approvedAt: opts.approvedAt!,
-            }
-          : undefined,
-      },
-      action: {
-        name: decision.action,
-        reExecutable: this.policy.idempotency.isReExecutable(decision.action),
-      },
-      result: {
-        success: true,
-        output: result.output,
+    try {
+      const result = this.executeDecision(input, decision)
+      this.idempotency.complete(key, result.output, {
         prevented: result.prevented,
-        shortCircuited: result.shortCircuited,
-      },
-      outcome: {},
-    })
+        preventedReason: result.prevented ? `Prevented by ${decision.source}` : undefined,
+      })
 
-    return result
+      this.execution.append({
+        sessionId,
+        taskId: opts.taskId,
+        idempotencyKey: key,
+        input: { raw: input, domain },
+        routing: {
+          source: result.source,
+          matchedGeneId: decision.matchedGeneId,
+          checkOutcome: result.checkOutcome,
+          operator: decision.operator,
+          fallbackReason: decision.fallbackReason,
+          forceFreeform: forceDeclared
+            ? {
+                reason: opts.forceFreeformReason!,
+                callerSource: opts.callerSource!,
+                approvedAt: opts.approvedAt!,
+              }
+            : undefined,
+        },
+        action: {
+          name: decision.action,
+          reExecutable: this.policy.idempotency.isReExecutable(decision.action),
+        },
+        result: {
+          success: true,
+          output: result.output,
+          prevented: result.prevented,
+          shortCircuited: result.shortCircuited,
+        },
+        outcome: {},
+      })
+
+      return result
+    } catch (error) {
+      this.idempotency.fail(key, error instanceof Error ? error.message : 'unknown')
+      throw error
+    }
   }
 
   getSession(sessionId: string) {
@@ -112,21 +120,56 @@ export class RuntimeCore {
   }
 
   async startBackgroundTask(type: string): Promise<string> {
-    return this.tasks.register({ type, title: `${type} task` })
+    return this.tasks.register({ type, title: `${type} task`, status: 'running', startTime: Date.now() })
   }
 
-  private resolveFallback(input: string, sessionId: string, opts: RuntimeOptions) {
-    const force = Boolean(opts.force_freeform)
-    if (force) {
-      return { source: 'llm_force_freeform' as const, action: 'llm_force_freeform' }
+  replay(action: string): Promise<{ action: string; replayed: boolean }> {
+    const candidates = this.execution.getReplayCandidates(action)
+    return Promise.resolve({ action, replayed: candidates.length > 0 })
+  }
+
+  private executeDecision(input: string, decision: NonNullable<ReturnType<DecisionRouter['nextDeterministic']>> | ReturnType<DecisionRouter['nextBoundedFallback']> | ReturnType<DecisionRouter['nextUnrestrictedFallback']>): RuntimeResult {
+    if (!decision) throw new RuntimeInvariantError('No routing decision selected')
+
+    if (decision.source === 'dna_check' && decision.checkOutcome === 'prerequisite_required') {
+      return { source: decision.source, action: decision.action, checkOutcome: 'prerequisite_required', output: { resolutionRequired: true } }
     }
 
+    if (decision.source === 'dna_check' && decision.checkOutcome === 'check_fail') {
+      return { source: decision.source, action: decision.action, checkOutcome: 'check_fail', prevented: true }
+    }
+
+    if (decision.source === 'db_execute' && decision.operator) {
+      return {
+        source: decision.source,
+        action: decision.action,
+        output: this.db.resolve(input)?.execute(input),
+        fallbackReason: decision.fallbackReason,
+      }
+    }
+
+    return {
+      source: decision.source,
+      action: decision.action,
+      prevented: Boolean(decision.prevented),
+      checkOutcome: decision.checkOutcome,
+      fallbackReason: decision.fallbackReason,
+    }
+  }
+
+  private pickFallbackRoute(input: string, sessionId: string, forceDeclared: boolean) {
+    if (forceDeclared) return this.router.nextUnrestrictedFallback(true)
+
+    const bounded = this.router.nextBoundedFallback()
+    const boundedResult = this.simulateTurboAssist(input, sessionId)
+    if (boundedResult !== undefined) return bounded
+
+    return this.router.nextUnrestrictedFallback(false)
+  }
+
+  private simulateTurboAssist(input: string, sessionId: string): string | undefined {
     const assembled = this.contextAssembler.assemble(this.sessionRuntime.getOrCreate(sessionId), input)
-    if (assembled.length <= 4000) {
-      return { source: 'turbo_assist' as const, action: 'turbo_assist' }
-    }
-
-    return { source: 'llm_freeform' as const, action: 'llm_freeform' }
+    return assembled.length <= 4000 ? `turbo:${input}` : undefined
   }
 
   private validateForceFreeform(opts: RuntimeOptions, domain: string): void {
@@ -136,11 +179,6 @@ export class RuntimeCore {
     if (!this.policy.routing.allowForceFreeform(domain, opts.callerSource)) {
       throw new RuntimeInvariantError(`force_freeform denied for domain ${domain}`)
     }
-  }
-
-  replay(action: string): Promise<{ action: string; replayed: boolean }> {
-    const hasMatch = this.execution.listBySource('replay').some((r) => r.action.name === action)
-    return Promise.resolve({ action, replayed: hasMatch })
   }
 }
 
