@@ -90,3 +90,7 @@ The backend reuses the logic in `tools/export_vda_onnx.py`, so the uploaded file
 ## 📄 License
 
 This repository inherits the license terms defined in [LICENSE](LICENSE).
+
+## 📘 Additional specification
+
+- `docs/mumpix-runtime-extensions-v0.4.md` — Mumpix Runtime Extensions formal specification (v0.4 pre-build final).
